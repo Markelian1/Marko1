@@ -66,7 +66,7 @@ pub struct NyOrbV2 {
     median_days: i64,
 
     // --- Trend filter (0 = off) ---
-    #[param(default = 0, min = 0, max = 200, title = "Trend SMA (days, 0 = off)")]
+    #[param(default = 50, min = 0, max = 200, title = "Trend SMA (days, 0 = off)")]
     trend_days: i64,
 
     // --- Drawing ---
