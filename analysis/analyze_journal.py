@@ -118,6 +118,24 @@ def main(sess_path: str, trades_path: str) -> None:
         print(f"  price later ran >= {k}x width beyond the OTHER side: {(fb.run_other_side_w >= k).sum()}")
     print("  (upper bound for a stop-and-reverse rule: the order of the moves is unknown)")
 
+    # ---------------- v1.9: reversal module ----------------
+    if "module" in t.columns:
+        print("\n" + "=" * 80)
+        print("REAL TRADES BY MODULE (v1.9)")
+        print("=" * 80)
+        print(table(t, ["module", "year"], "result_R"))
+        print(table(t, "module", "result_R"))
+    if "rv_dir" in s.columns:
+        rv = s[s.rv_dir != "-"].copy()
+        print("\n" + "=" * 80)
+        print(f"SHADOW REVERSAL after every stopped-out shadow breakout: {len(rv)}")
+        print("=" * 80)
+        print(table(rv, "year", "rv_R"))
+        print(table(rv, "rv_dir", "rv_R"))
+        both = sh.groupby("year").sh_R.sum().add(rv.groupby("year").rv_R.sum(), fill_value=0)
+        print("\nshadow breakout + shadow reversal, sum R by year:")
+        print(both.round(1).to_string())
+
 
 if __name__ == "__main__":
     main(sys.argv[1], sys.argv[2])
