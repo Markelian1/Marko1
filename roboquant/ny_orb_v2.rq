@@ -1,0 +1,264 @@
+use rq_sdk::prelude::*;
+
+// New York Opening-Range Breakout v2
+// Range = first N minutes of the NY session (RTH open, DST-aware ET).
+// Entry: a bar CLOSES beyond the range -> market entry (one per session).
+// Stop:  `stop_frac` of the range width back inside the range from the broken side.
+// Target: `rr_target` x the actual risk measured from the entry close.
+// Range band (from the MT5 XAUUSD tests): trade only when today's range is
+//   between `min_ratio` and `max_ratio` x the median range of the previous
+//   `median_days` sessions (0 = that side off). While fewer than
+//   `median_days` sessions are recorded, the band stands down from trading.
+// Trend filter: with `trend_days` > 0, longs only above the daily SMA and
+//   shorts only below it; a breakout against the trend consumes the session.
+// Sizing: `fixed_qty` contracts, or risk-based (`risk_pct`, capped) when 0.
+// No new entries after `last_entry_hhmm`; any position is flattened at `flat_hhmm`.
+
+fn to_min(hhmm: u32) -> u32 {
+    (hhmm / 100) * 60 + hhmm % 100
+}
+
+fn median_of(values: &[f64]) -> f64 {
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.total_cmp(b));
+    let n = sorted.len();
+    if n % 2 == 1 {
+        sorted[n / 2]
+    } else {
+        (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+    }
+}
+
+#[strategy(name = "NY Open Range Breakout v2")]
+pub struct NyOrbV2 {
+    // --- Session clock (HHMM, ET) ---
+    #[param(default = 930, min = 900, max = 1000, title = "NY RTH open (HHMM ET)")]
+    session_open_hhmm: i64,
+    #[param(default = 30, min = 5, max = 120, step = 5, title = "Opening range length (min)")]
+    range_minutes: i64,
+    #[param(default = 1130, min = 1000, max = 1600, title = "Last entry time (HHMM ET)")]
+    last_entry_hhmm: i64,
+    #[param(default = 1545, min = 1400, max = 1700, title = "Flatten time (HHMM ET)")]
+    flat_hhmm: i64,
+
+    // --- Trade economics ---
+    #[param(default = 2.0, min = 0.5, max = 5.0, step = 0.25, title = "Target (R multiple)")]
+    rr_target: f64,
+    #[param(default = 1.0, min = 0.25, max = 1.0, step = 0.25, title = "Stop depth (fraction of range)")]
+    stop_frac: f64,
+    #[param(default = 1, min = 0, max = 100, title = "Fixed contracts (0 = risk sizing)")]
+    fixed_qty: i64,
+    #[param(default = 0.01, min = 0.0025, max = 0.03, step = 0.0025, title = "Risk per trade (fraction of equity)")]
+    risk_pct: f64,
+    #[param(default = 10, min = 1, max = 100, title = "Max contracts (risk sizing)")]
+    max_contracts: i64,
+    #[param(default = true, title = "Allow longs")]
+    allow_long: bool,
+    #[param(default = true, title = "Allow shorts")]
+    allow_short: bool,
+
+    // --- Range band (0 = off) ---
+    #[param(default = 0.7, min = 0.0, max = 3.0, step = 0.05, title = "Min range vs median (0 = off)")]
+    min_ratio: f64,
+    #[param(default = 1.0, min = 0.0, max = 3.0, step = 0.05, title = "Max range vs median (0 = off)")]
+    max_ratio: f64,
+    #[param(default = 20, min = 5, max = 100, title = "Median lookback (sessions)")]
+    median_days: i64,
+
+    // --- Trend filter (0 = off) ---
+    #[param(default = 0, min = 0, max = 200, title = "Trend SMA (days, 0 = off)")]
+    trend_days: i64,
+
+    // --- Drawing ---
+    #[param(default = true, title = "Draw opening range box")]
+    draw_box: bool,
+
+    // --- State ---
+    trend_sma: Ind,
+    widths: Vec<f64>,
+    day: u32,
+    r_high: f64,
+    r_low: f64,
+    have_range: bool,
+    range_frozen: bool,
+    traded: bool,
+    orb_box: Option<DrawingId>,
+}
+
+impl Strategy for NyOrbV2 {
+    fn on_init(&mut self, init: &mut Init) {
+        if self.trend_days > 0 {
+            self.trend_sma = init.add(Sma::new(self.trend_days.max(2) as usize).timeframe("1D"));
+        }
+    }
+
+    fn on_bar(&mut self, ctx: &mut Ctx, bar: Bar) {
+        let date = bar.time.et_date_num();
+        let now = to_min(bar.time.et_hhmm());
+        let open_m = to_min(self.session_open_hhmm as u32);
+        let range_end = open_m + self.range_minutes.max(1) as u32;
+        let last_entry = to_min(self.last_entry_hhmm as u32);
+        let flat_m = to_min(self.flat_hhmm as u32);
+
+        // ---- New session: reset state ----
+        if date != self.day {
+            if let Some(id) = self.orb_box.take() {
+                ctx.freeze(id);
+            }
+            self.day = date;
+            self.have_range = false;
+            self.range_frozen = false;
+            self.traded = false;
+        }
+
+        // ---- Build the opening range (bar.time is the bar OPEN) ----
+        if now >= open_m && now < range_end {
+            if self.have_range {
+                self.r_high = self.r_high.max(bar.high);
+                self.r_low = self.r_low.min(bar.low);
+            } else {
+                self.r_high = bar.high;
+                self.r_low = bar.low;
+                self.have_range = true;
+            }
+            if self.draw_box {
+                match self.orb_box {
+                    Some(id) => ctx.update(id, self.r_high, self.r_low),
+                    None => {
+                        let t = ctx.time();
+                        self.orb_box = Some(
+                            ctx.plot_zone(self.r_high, self.r_low)
+                                .starting_at(t)
+                                .label("NY OR")
+                                .color("rgba(41,98,255,0.15)")
+                                .border("#2962ff")
+                                .send(),
+                        );
+                    }
+                }
+            }
+            return;
+        }
+
+        // ---- Freeze the range once the window has closed ----
+        if self.have_range && !self.range_frozen && now >= range_end {
+            self.range_frozen = true;
+            if let Some(id) = self.orb_box.take() {
+                ctx.freeze(id);
+            }
+
+            // Range band: compare with the median of the PREVIOUS sessions,
+            // then record today's width.
+            let width = self.r_high - self.r_low;
+            let n = self.median_days.max(5) as usize;
+            if self.min_ratio > 0.0 || self.max_ratio > 0.0 {
+                if self.widths.len() < n {
+                    self.traded = true;
+                    ctx.log("Session skipped: range median warming up");
+                } else {
+                    let med = median_of(&self.widths);
+                    if self.max_ratio > 0.0 && width > self.max_ratio * med {
+                        self.traded = true;
+                        ctx.log(&format!(
+                            "Session skipped: range {:.2} > {:.2} x median {:.2}",
+                            width, self.max_ratio, med
+                        ));
+                    } else if self.min_ratio > 0.0 && width < self.min_ratio * med {
+                        self.traded = true;
+                        ctx.log(&format!(
+                            "Session skipped: range {:.2} < {:.2} x median {:.2}",
+                            width, self.min_ratio, med
+                        ));
+                    }
+                }
+            }
+            self.widths.push(width);
+            if self.widths.len() > n {
+                self.widths.remove(0);
+            }
+        }
+
+        // ---- Flatten before the session close ----
+        if now >= flat_m {
+            if ctx.position() != 0 {
+                ctx.close_position();
+                ctx.log("Session flatten - closing position");
+            }
+            return;
+        }
+
+        // ---- One breakout entry per session, inside the entry window ----
+        if !self.range_frozen || self.traded || ctx.position() != 0 || now > last_entry {
+            return;
+        }
+
+        let width = self.r_high - self.r_low;
+        if width <= 0.0 {
+            return;
+        }
+        let depth = self.stop_frac.clamp(0.1, 1.0) * width;
+
+        let mut go_long = self.allow_long && bar.close > self.r_high;
+        let mut go_short = self.allow_short && bar.close < self.r_low;
+        if !go_long && !go_short {
+            return;
+        }
+
+        // ---- Trend filter: trade only with the daily trend ----
+        if self.trend_days > 0 {
+            let Some(sma) = ctx.val(self.trend_sma) else { return };
+            go_long = go_long && bar.close > sma;
+            go_short = go_short && bar.close < sma;
+            if !go_long && !go_short {
+                // The range is consumed: no chasing the other side later.
+                self.traded = true;
+                ctx.log(&format!(
+                    "Breakout against the trend skipped (close {:.2}, SMA {:.2})",
+                    bar.close, sma
+                ));
+                return;
+            }
+        }
+
+        let entry = bar.close;
+        let stop = if go_long { self.r_high - depth } else { self.r_low + depth };
+        let risk = (entry - stop).abs();
+        if risk <= 0.0 {
+            return;
+        }
+        let target = if go_long {
+            entry + self.rr_target * risk
+        } else {
+            entry - self.rr_target * risk
+        };
+
+        let loss_per_contract = risk * ctx.contract().multiplier;
+        let budget = ctx.equity() * self.risk_pct;
+        let qty = if self.fixed_qty > 0 {
+            self.fixed_qty
+        } else {
+            ((budget / loss_per_contract).floor() as i64).min(self.max_contracts)
+        };
+
+        // The range is consumed either way: no chasing later in the day.
+        self.traded = true;
+        if qty < 1 {
+            ctx.log(&format!(
+                "Breakout skipped: 1 contract risks {:.0} > budget {:.0}",
+                loss_per_contract, budget
+            ));
+            return;
+        }
+
+        if go_long {
+            ctx.buy(qty).sl(stop).tp(target).send();
+        } else {
+            ctx.sell(qty).sl(stop).tp(target).send();
+        }
+        ctx.log(&format!(
+            "{} x{} @ {:.2} | stop {:.2} | target {:.2} | range {:.2}-{:.2}",
+            if go_long { "LONG" } else { "SHORT" },
+            qty, entry, stop, target, self.r_low, self.r_high
+        ));
+    }
+}
