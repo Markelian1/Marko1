@@ -1,0 +1,82 @@
+# CRT MTF EA (MT5)
+
+Expert Advisor për MetaTrader 5, i ndërtuar nga indikatori TradingView
+"CRT MTF EVENT ENGINE v5 + v6 1M MICRO ENGINE". Vlerat fillestare janë
+zgjedhur për **XAUUSD**.
+
+Skedari: `Experts/CRT_MTF_EA.mq5`
+
+## Si funksionon
+
+1. Shtatë motorë CRT (1W, 1D, 4H, 1H, 30M, 15M, 5M) punojnë vetëm me qirinj
+   të mbyllur: parent → sweep → mbyllje brenda range-it → CRT.
+2. Kur konfirmohet një **CRT në 5M**, niset motori **1M**:
+   sweep likuiditeti → MSS → FVG → retest i FVG-së.
+3. Te retest-i hapet trade me çmim tregu:
+   - **SL** përtej ekstremit të sweep-it 1M (ose wick-ut të C2, ose FVG-së)
+   - **TP** te target-i i CRT-së 5M (ana tjetër e parent range), ose R fiks
+
+Ekziston edhe modaliteti `ENTRY_CRT_CLOSE`: hyrje direkt kur mbyllet CRT-ja
+5M, pa motorin 1M. Shërben si krahasim, për të parë nëse filtri 1M sjell
+ndonjë përfitim.
+
+## Çfarë u rregullua nga versioni Pine
+
+| Problemi në Pine | Në EA |
+|---|---|
+| Rregulli 50% ishte i kthyer mbrapsht (bull: `low <= 50%`) | Si parazgjedhje entry mbyllet kur çmimi ka bërë 50% të rrugës **drejt target-it**. Rregulli v5 mbetet si opsion. |
+| Eventet zbuloheshin me `!=` kundrejt `na` | Eventet vijnë direkt nga motori |
+| 5M vinte me një bar vonesë (`[1]` në chart 5M) | Motori 5M punon me qirinj M5 të mbyllur, pa vonesë shtesë |
+| Historia 1M fshihej te çdo CRT e re | Historia 1M është e vazhdueshme, ndaj sweep-i mund të ndodhë te qiriri i parë |
+| `MSS Lookback` nuk përdorej | Sweep-i dhe MSS kanë lookback të veçantë |
+| Motori 1M mund të hynte pasi ishte prekur target-i | Target-i dhe 50% kontrollohen në çdo qiri 1M |
+| Qiriri 1M që po formohej shkaktonte repaint | Përdoren vetëm qirinj 1M të mbyllur |
+| Ledger-i ruante TARGET/INVALID me nivelet e reja | Ledger-i ruan nivelet e CRT-së që sapo u mbyll |
+
+## Instalimi
+
+1. Kopjo `Experts/CRT_MTF_EA.mq5` te `MQL5/Experts/` e terminalit
+   (MT5: File → Open Data Folder).
+2. Hape në MetaEditor dhe shtyp **F7** për ta kompiluar.
+3. Tërhiqe EA-në mbi grafikun XAUUSD. Timeframe-i i grafikut nuk ka rëndësi;
+   M5 është më i miri për ta ndjekur vizualisht.
+
+> Kodi **nuk është kompiluar** në mjedisin ku u shkrua, sepse aty nuk ka
+> MetaEditor. Nëse F7 jep gabime, dërgoji dhe rregullohen.
+
+## Testimi në Strategy Tester
+
+- Symbol: XAUUSD (ose emri që përdor brokeri, p.sh. `XAUUSD.m`, `GOLD`)
+- Modeli: **Every tick based on real ticks**, ose të paktën **1 minute OHLC**.
+  Mos përdor "Open prices only", sepse EA-ja punon me qirinj 1M.
+- Visual mode: shfaq nivelet 5M, eventet 1M dhe panelin.
+- Për krahasim, testo si `ENTRY_MICRO_1M` ashtu edhe `ENTRY_CRT_CLOSE`.
+
+## Parametrat kryesorë
+
+| Parametri | Vlera fillestare | Shpjegim |
+|---|---|---|
+| `InpTradeEnabled` | true | false = vetëm sinjale/alarme, pa trade |
+| `InpEntryMode` | 1M micro | ose hyrje direkt te CRT 5M |
+| `InpRiskPercent` | 0.5 | % e balancës që humbet nëse preket SL-ja |
+| `InpSLMode` | 1M sweep | ose wick-u C2, ose FVG |
+| `InpSLBuffer` | 0.30 | distanca shtesë e SL-së, në $ për XAUUSD |
+| `InpTPMode` | CRT target | ose R fiks (`InpRMultiple`) |
+| `InpMinRR` | 1.0 | trade-t me reward:risk më të vogël anashkalohen |
+| `InpBreakEvenR` | 0 (fikur) | kalon SL-në te hyrja pas +R |
+| `InpMaxTradesDay` | 3 | numri maksimal i trade-ve në ditë |
+| `InpMaxSpread` | 0.50 | spread maksimal në $ |
+| `InpUseSession` | false | orari është në **orën e serverit** të brokerit |
+| `InpBiasMode` | off | filtër sipas CRT-së në një timeframe më të lartë |
+| `InpMidRule` | toward target | rregulli 50%: drejt target-it, v5, ose i fikur |
+| `InpSweepLookback` / `InpMssLookback` | 3 / 3 | numri i qirinjve 1M |
+| `InpMicroMaxBars` | 15 | sa qirinj 1M pret pas CRT-së |
+| `InpLedgerCSV` | false | ruan ledger-in te `MQL5/Files/CRT_ledger_<symbol>.csv` |
+
+## Kufizimet
+
+- Nuk ka filtër lajmesh (NFP, CPI, FOMC). Gjatë lajmeve ari lëviz shumë,
+  ndaj përdor `InpUseSession` ose fike EA-në manualisht.
+- Orari i sesionit është në kohën e serverit të brokerit, zakonisht GMT+2/+3.
+- Mbahet vetëm një pozicion njëherësh për çdo simbol dhe magic number.
+- Rezultatet e backtest-it nuk garantojnë fitim. Testoje fillimisht në llogari demo.
