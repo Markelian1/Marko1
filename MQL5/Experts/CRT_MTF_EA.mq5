@@ -40,7 +40,7 @@
 // Defaults are tuned for XAUUSD (prices in $).
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.23"
+#property version   "1.24"
 #property description "Multi-timeframe CRT engine (W1..M5). Enters on the 5M (or higher) CRT,"
 #property description "or optionally on a 1M sweep -> MSS -> FVG -> retest. Tuned for XAUUSD."
 
@@ -183,6 +183,9 @@ input bool InpVerbose     = true;  // Print 1M micro events to the journal
 input bool InpLedgerCSV   = false; // Write the ledger to MQL5/Files/CRT_ledger_<symbol>.csv
 input bool InpAlertPopup  = false; // Popup alerts
 input bool InpAlertPush   = false; // Push notifications
+
+input group "OPTIMIZATION"
+input int  InpOptMinTrades = 30;   // Min trades for the "Custom max" score (fewer = score 0)
 
 
 // ============================================================================
@@ -1717,7 +1720,7 @@ void UpdatePanel()
    if(!InpShowPanel || g_silent || g_noChart)
       return;
 
-   string s = "CRT MTF EA v1.23  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
+   string s = "CRT MTF EA v1.24  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
               "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  entry: " + TfName(InpEntryTF) + (InpEntryMode == ENTRY_MICRO_1M ? " CRT + 1M MICRO" : " CRT CLOSE");
 
@@ -1842,7 +1845,7 @@ int OnInit()
 
    // If history is not loaded yet, OnTick retries.
    // The tester keeps input values from earlier runs: print what is really used.
-   Log(StringFormat("CRT MTF EA v1.23 | entry %s %s | risk %.2f%% | max trades/day %s | session %s | "
+   Log(StringFormat("CRT MTF EA v1.24 | entry %s %s | risk %.2f%% | max trades/day %s | session %s | "
                     "min SL %.2f / %.1fx spread | min sweep %.0f%% | min RR %.2f | 50%% rule %s",
                     TfName(InpEntryTF), InpEntryMode == ENTRY_MICRO_1M ? "+1M micro" : "CRT close",
                     InpRiskPercent, InpMaxTradesDay > 0 ? IntegerToString(InpMaxTradesDay) : "NO LIMIT",
@@ -1858,11 +1861,11 @@ int OnInit()
 }
 
 // Optimization criterion ("Custom max"): profit factor, but only for runs
-// with enough trades to mean something.
+// with enough trades to mean something (also applied to the forward part).
 double OnTester()
 {
    double trades = TesterStatistics(STAT_TRADES);
-   if(trades < 100.0)
+   if(trades < InpOptMinTrades)
       return 0.0;
    return TesterStatistics(STAT_PROFIT_FACTOR);
 }
