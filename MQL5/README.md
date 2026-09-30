@@ -1,24 +1,24 @@
 # CRT MTF EA (MT5)
 
-Expert Advisor për MetaTrader 5, i ndërtuar nga indikatori TradingView
-"CRT MTF EVENT ENGINE v5 + v6 1M MICRO ENGINE". Vlerat fillestare janë
-zgjedhur për **XAUUSD**.
+Expert Advisor për MetaTrader 5, i ndërtuar nga indikatorët TradingView
+"CRT MTF EVENT ENGINE v8 - 5M FINAL - NO 1M" dhe "v5 + v6 1M MICRO ENGINE".
+Vlerat fillestare janë zgjedhur për **XAUUSD**.
 
-Skedari: `Experts/CRT_MTF_EA.mq5`
+Skedari: `Experts/CRT_MTF_EA.mq5` (v1.10)
 
 ## Si funksionon
 
 1. Shtatë motorë CRT (1W, 1D, 4H, 1H, 30M, 15M, 5M) punojnë vetëm me qirinj
    të mbyllur: parent → sweep → mbyllje brenda range-it → CRT.
-2. Kur konfirmohet një **CRT në 5M**, niset motori **1M**:
-   sweep likuiditeti → MSS → FVG → retest i FVG-së.
-3. Te retest-i hapet trade me çmim tregu:
-   - **SL** përtej ekstremit të sweep-it 1M (ose wick-ut të C2, ose FVG-së)
+2. **v8, modaliteti fillestar (`ENTRY_CRT_CLOSE`)**: kur mbyllet CRT-ja 5M,
+   hapet trade me çmim tregu.
+   - **SL** përtej wick-ut të qiririt që bëri sweep-in (C2) + buffer
    - **TP** te target-i i CRT-së 5M (ana tjetër e parent range), ose R fiks
-
-Ekziston edhe modaliteti `ENTRY_CRT_CLOSE`: hyrje direkt kur mbyllet CRT-ja
-5M, pa motorin 1M. Shërben si krahasim, për të parë nëse filtri 1M sjell
-ndonjë përfitim.
+   - Nëse CRT-ja 5M invalidohet (mbyllje jashtë parent range) ndërsa trade-i
+     është hapur, trade-i mbyllet (`InpCloseOnInvalid`).
+3. **Modaliteti opsional `ENTRY_MICRO_1M`**: pas CRT-së 5M, EA-ja pret në 1M
+   sweep → MSS → FVG → retest dhe hyn te retest-i, me SL përtej sweep-it 1M.
+   Shërben për të krahasuar nëse filtri 1M sjell ndonjë përfitim.
 
 ## Çfarë u rregullua nga versioni Pine
 
@@ -50,16 +50,17 @@ ndonjë përfitim.
 - Modeli: **Every tick based on real ticks**, ose të paktën **1 minute OHLC**.
   Mos përdor "Open prices only", sepse EA-ja punon me qirinj 1M.
 - Visual mode: shfaq nivelet 5M, eventet 1M dhe panelin.
-- Për krahasim, testo si `ENTRY_MICRO_1M` ashtu edhe `ENTRY_CRT_CLOSE`.
+- Për krahasim, testo si `ENTRY_CRT_CLOSE` (v8) ashtu edhe `ENTRY_MICRO_1M`.
 
 ## Parametrat kryesorë
 
 | Parametri | Vlera fillestare | Shpjegim |
 |---|---|---|
 | `InpTradeEnabled` | true | false = vetëm sinjale/alarme, pa trade |
-| `InpEntryMode` | 1M micro | ose hyrje direkt te CRT 5M |
+| `InpEntryMode` | 5M CRT close (v8) | ose 1M micro |
+| `InpCloseOnInvalid` | true | mbyll trade-in kur CRT-ja 5M e tij invalidohet |
 | `InpRiskPercent` | 0.5 | % e balancës që humbet nëse preket SL-ja |
-| `InpSLMode` | 1M sweep | ose wick-u C2, ose FVG |
+| `InpSLMode` | 1M sweep | vetëm për 1M: sweep 1M, wick-u C2, ose FVG. Në 5M SL-ja është gjithmonë te wick-u C2 |
 | `InpSLBuffer` | 0.30 | distanca shtesë e SL-së, në $ për XAUUSD |
 | `InpTPMode` | CRT target | ose R fiks (`InpRMultiple`) |
 | `InpMinRR` | 1.0 | trade-t me reward:risk më të vogël anashkalohen |

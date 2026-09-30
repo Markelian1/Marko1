@@ -3,17 +3,18 @@
 //|                 CRT MTF EVENT ENGINE - Expert Advisor for MT5    |
 //+------------------------------------------------------------------+
 //
-// Port of the TradingView script
-//   "CRT MTF EVENT ENGINE v5 - EVENT LEDGER" + "v6 1M MICRO ENGINE"
+// Port of the TradingView scripts
+//   "CRT MTF EVENT ENGINE v8 - 5M FINAL - NO 1M"   (default entry mode)
+//   "CRT MTF EVENT ENGINE v5 + v6 1M MICRO ENGINE" (optional entry mode)
 //
 // FLOW
 //   1W / 1D / 4H / 1H / 30M / 15M / 5M CRT engines (closed bars only)
 //         |
 //   5M CRT CONFIRMED  (parent -> sweep -> close back inside)
 //         |
-//   1M LIQUIDITY SWEEP -> 1M MSS -> 1M FVG -> 1M FVG RETEST
-//         |
-//   MARKET ENTRY  (SL beyond the sweep, TP at the 5M CRT target)
+//   v8 (default): MARKET ENTRY at the 5M CRT close
+//                 SL beyond the C2 sweep wick, TP at the 5M CRT target
+//   optional:     1M SWEEP -> 1M MSS -> 1M FVG -> 1M FVG RETEST -> ENTRY
 //
 // FIXES VS THE PINE VERSION
 //   - 50% rule: by default the entry retires once price has already
@@ -32,9 +33,9 @@
 // Defaults are tuned for XAUUSD (prices in $).
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.00"
-#property description "Multi-timeframe CRT engine (W1..M5) with a 1M micro entry"
-#property description "(sweep -> MSS -> FVG -> retest). Defaults tuned for XAUUSD."
+#property version   "1.10"
+#property description "Multi-timeframe CRT engine (W1..M5). Enters on the 5M CRT (v8),"
+#property description "or optionally on a 1M sweep -> MSS -> FVG -> retest. Tuned for XAUUSD."
 
 #include <Trade/Trade.mqh>
 
@@ -84,7 +85,7 @@ enum ENUM_MID_RULE
 enum ENUM_ENTRY_MODE
 {
    ENTRY_MICRO_1M  = 0, // 1M micro: sweep -> MSS -> FVG -> retest
-   ENTRY_CRT_CLOSE = 1  // Market entry at 5M CRT confirmation
+   ENTRY_CRT_CLOSE = 1  // 5M only (v8): market entry at 5M CRT confirmation
 };
 
 enum ENUM_SL_MODE
@@ -120,13 +121,14 @@ enum ENUM_BIAS_MODE
 
 input group "TRADING"
 input bool            InpTradeEnabled  = true;           // Place trades (false = signals only)
-input ENUM_ENTRY_MODE InpEntryMode     = ENTRY_MICRO_1M; // Entry mode
+input ENUM_ENTRY_MODE InpEntryMode     = ENTRY_CRT_CLOSE; // Entry mode
+input bool            InpCloseOnInvalid = true;          // Close the trade when its 5M CRT is invalidated
 input ulong           InpMagic         = 550100;         // Magic number
 input ENUM_RISK_MODE  InpRiskMode      = RISK_PERCENT;   // Position sizing
 input double          InpRiskPercent   = 0.5;            // Risk per trade (% of balance)
 input double          InpFixedLots     = 0.01;           // Fixed lots
 input double          InpMaxLots       = 5.0;            // Max lots per trade (safety cap)
-input ENUM_SL_MODE    InpSLMode        = SL_MICRO_SWEEP; // Stop loss placement
+input ENUM_SL_MODE    InpSLMode        = SL_MICRO_SWEEP; // Stop loss placement (1M mode; 5M mode uses the C2 wick)
 input double          InpSLBuffer      = 0.30;           // SL buffer (price units, XAUUSD = $)
 input ENUM_TP_MODE    InpTPMode        = TP_CRT_TARGET;  // Take profit
 input double          InpRMultiple     = 2.0;            // R multiple (when TP = R multiple)
@@ -263,6 +265,7 @@ int         g_csv        = INVALID_HANDLE;
 int         g_drawnCrtId = -1;
 long        g_objSeq     = 0;
 string      g_lastSkip   = "-";
+int         g_tradeCrtId = -1;    // 5M CRT id of the last trade opened
 
 
 // ============================================================================
@@ -987,12 +990,29 @@ void ExecuteSignal(int dir, double slRef, double crtTarget, int crtId, string ta
       return;
    }
 
-   g_lastSkip = "-";
+   g_lastSkip   = "-";
+   g_tradeCrtId = crtId;
    string msg = StringFormat("%s %s %s lots | entry %s  SL %s  TP %s | RR %.2f | CRT #%d",
                              dir == 1 ? "BUY" : "SELL", tag, DoubleToString(lots, 2),
                              PriceText(entry), PriceText(sl), PriceText(tp), rr, crtId);
    Log(msg);
    Notify(_Symbol + " " + msg);
+}
+
+void CloseOurPositions(string reason)
+{
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0)
+         continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol)
+         continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC) != InpMagic)
+         continue;
+      if(g_trade.PositionClose(ticket))
+         Log("CLOSE: " + reason);
+   }
 }
 
 void ManagePositions()
@@ -1385,6 +1405,10 @@ void OnEngineEvent(int k, int ev, const LedgerEvent &le, const MqlRates &bar, bo
          if(le.id == g_micro.crtId)
             CancelMicro("5M " + EventText(ev), le.evTime);
 
+         // The setup behind the open trade is dead: get out at market.
+         if(ev == EV_INVALID && InpCloseOnInvalid && le.id == g_tradeCrtId)
+            CloseOurPositions(StringFormat("5M CRT #%d INVALIDATED", le.id));
+
          if(ev != EV_MID && le.id == g_drawnCrtId)
          {
             FreezeCrtLines(le.id, le.evTime);
@@ -1549,7 +1573,7 @@ void UpdatePanel()
    if(!InpShowPanel || g_silent || g_noChart)
       return;
 
-   string s = "CRT MTF EA v1.00  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
+   string s = "CRT MTF EA v1.10  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
               "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  entry: " + (InpEntryMode == ENTRY_MICRO_1M ? "1M MICRO" : "5M CRT CLOSE");
 
