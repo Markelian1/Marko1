@@ -40,7 +40,7 @@
 // Defaults are tuned for XAUUSD (prices in $).
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.20"
+#property version   "1.21"
 #property description "Multi-timeframe CRT engine (W1..M5). Enters on the 5M (or higher) CRT,"
 #property description "or optionally on a 1M sweep -> MSS -> FVG -> retest. Tuned for XAUUSD."
 
@@ -1619,7 +1619,7 @@ void UpdatePanel()
    if(!InpShowPanel || g_silent || g_noChart)
       return;
 
-   string s = "CRT MTF EA v1.20  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
+   string s = "CRT MTF EA v1.21  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
               "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  entry: " + TfName(InpEntryTF) + (InpEntryMode == ENTRY_MICRO_1M ? " CRT + 1M MICRO" : " CRT CLOSE");
 
@@ -1646,9 +1646,12 @@ void UpdatePanel()
         "   Entry " + PriceText(g_micro.entryPrice);
 
    double spread = SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   s += StringFormat("\nTrades today %d/%d  |  spread %s  |  session %s  |  last skip: %s",
-                     TradesToday(), InpMaxTradesDay, DoubleToString(spread, _Digits),
-                     InSession(TimeCurrent()) ? "IN" : "OUT", g_lastSkip);
+   string sessTxt = !InpUseSession ? "OFF (24h)"
+                  : StringFormat("%s %02d:%02d-%02d:%02d", InSession(TimeCurrent()) ? "IN" : "OUT",
+                                 InpSessStartHour, InpSessStartMin, InpSessEndHour, InpSessEndMin);
+   s += StringFormat("\nTrades today %d/%s  |  spread %s  |  session %s  |  last skip: %s",
+                     TradesToday(), InpMaxTradesDay > 0 ? IntegerToString(InpMaxTradesDay) : "NO LIMIT",
+                     DoubleToString(spread, _Digits), sessTxt, g_lastSkip);
 
    s += "\n\nEVENT LEDGER (newest first)";
    int n    = ArraySize(g_ledger);
@@ -1736,6 +1739,15 @@ int OnInit()
       OpenCsv();
 
    // If history is not loaded yet, OnTick retries.
+   // The tester keeps input values from earlier runs: print what is really used.
+   Log(StringFormat("CRT MTF EA v1.21 | entry %s %s | risk %.2f%% | max trades/day %s | session %s | "
+                    "min SL %.2f / %.1fx spread | min sweep %.0f%% | min RR %.2f | 50%% rule %s",
+                    TfName(InpEntryTF), InpEntryMode == ENTRY_MICRO_1M ? "+1M micro" : "CRT close",
+                    InpRiskPercent, InpMaxTradesDay > 0 ? IntegerToString(InpMaxTradesDay) : "NO LIMIT",
+                    InpUseSession ? StringFormat("%02d:%02d-%02d:%02d", InpSessStartHour, InpSessStartMin,
+                                                 InpSessEndHour, InpSessEndMin) : "OFF",
+                    InpMinSL, InpMinSLSpreadX, InpMinSweepPct, InpMinRR, EnumToString(InpMidRule)));
+
    g_ready = InitEngines();
    if(g_ready)
       UpdatePanel();
