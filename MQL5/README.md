@@ -132,3 +132,20 @@ anashkalohen menjëherë.
 **Si lexohet:** një kombinim ia vlen vetëm nëse ka **PF > 1.1 edhe në periudhën
 forward** dhe të paktën 100 trade. Një PF i mirë vetëm në periudhën e parë
 nuk mjafton: mund të jetë thjesht përshtatje me të kaluarën.
+
+## Rezultatet e optimizimit dhe kandidati v1.25
+
+Optimizimi 2 (vetëm "Require an active HTF CRT in the same direction"):
+
+| Hyrja | Bias | Periudha 1 (2023 – qershor 2025) | Forward (korrik 2025 – shtator 2026) |
+|---|---|---|---|
+| M15 | D1 | PF 0.87 (306 trade) | **PF 1.39–1.41** (~185 trade) |
+| H1 | D1 | PF 0.91–0.94 (103 trade) | PF 1.36–1.71 (39 trade) |
+| H1 | H4 | PF 0.85–0.89 (112 trade) | PF 1.44–1.45 (47 trade) |
+| M30 | H4/D1 | PF 0.62–0.79 | PF 0.83–1.09 |
+
+- Çdo variant M15/H1 me bias H4/D1 në të njëjtin drejtim **humbi në periudhën 1
+  dhe fitoi në forward**. Avantazhi varet nga kushtet e tregut (regjimi).
+- Asnjë kombinim nuk e kaloi rregullin "PF ≥ 1.0 në periudhën 1".
+- Parazgjedhjet e v1.25 janë familja më e mirë: **M15 + D1 same direction**.
+  Përdore **vetëm në demo** derisa ta vërtetojmë.

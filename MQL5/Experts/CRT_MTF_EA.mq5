@@ -23,6 +23,13 @@
 //   - min sweep depth beyond the parent range (% of the range)
 //   - session filter on by default (10:00-20:00 server time)
 //
+// v1.25 DEFAULTS = best family of the 2023-2026 optimizations
+//   M15 CRT entries only in the direction of an active D1 CRT.
+//   In-sample 2023-01..2025-06: PF ~0.87 (306 trades) - still losing.
+//   Forward   2025-07..2026-09: PF ~1.40 (~185 trades).
+//   Every M15/H1 + H4/D1 same-direction variant lost in-sample and won
+//   forward, so the edge depends on the market regime: demo first.
+//
 // FIXES VS THE PINE VERSION
 //   - 50% rule: by default the entry retires once price has already
 //     travelled halfway TOWARD the target (the v5 rule is selectable).
@@ -40,7 +47,7 @@
 // Defaults are tuned for XAUUSD (prices in $).
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.24"
+#property version   "1.25"
 #property description "Multi-timeframe CRT engine (W1..M5). Enters on the 5M (or higher) CRT,"
 #property description "or optionally on a 1M sweep -> MSS -> FVG -> retest. Tuned for XAUUSD."
 
@@ -129,7 +136,7 @@ enum ENUM_BIAS_MODE
 input group "TRADING"
 input bool            InpTradeEnabled  = true;           // Place trades (false = signals only)
 input ENUM_ENTRY_MODE InpEntryMode     = ENTRY_CRT_CLOSE; // Entry mode
-input ENUM_TIMEFRAMES InpEntryTF       = PERIOD_M5;      // CRT entry timeframe (M5/M15/M30/H1/H4)
+input ENUM_TIMEFRAMES InpEntryTF       = PERIOD_M15;     // CRT entry timeframe (M5/M15/M30/H1/H4)
 input bool            InpCloseOnInvalid = true;          // Close the trade when its entry CRT is invalidated
 input ulong           InpMagic         = 550100;         // Magic number
 input ENUM_RISK_MODE  InpRiskMode      = RISK_PERCENT;   // Position sizing
@@ -160,8 +167,8 @@ input int  InpSessEndMin     = 0;     // Session end minute
 input bool InpCloseOutside   = false; // Close positions outside the session
 
 input group "HTF BIAS"
-input ENUM_BIAS_MODE  InpBiasMode = BIAS_OFF;  // HTF bias filter
-input ENUM_TIMEFRAMES InpBiasTF   = PERIOD_H1; // HTF bias timeframe (W1/D1/H4/H1/M30/M15)
+input ENUM_BIAS_MODE  InpBiasMode = BIAS_SAME_DIR; // HTF bias filter
+input ENUM_TIMEFRAMES InpBiasTF   = PERIOD_D1;     // HTF bias timeframe (W1/D1/H4/H1/M30/M15)
 
 input group "CRT ENGINE"
 input ENUM_MID_RULE InpMidRule    = MID_TOWARD_TARGET; // 50% midpoint rule
@@ -1720,7 +1727,7 @@ void UpdatePanel()
    if(!InpShowPanel || g_silent || g_noChart)
       return;
 
-   string s = "CRT MTF EA v1.24  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
+   string s = "CRT MTF EA v1.25  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
               "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  entry: " + TfName(InpEntryTF) + (InpEntryMode == ENTRY_MICRO_1M ? " CRT + 1M MICRO" : " CRT CLOSE");
 
@@ -1845,7 +1852,7 @@ int OnInit()
 
    // If history is not loaded yet, OnTick retries.
    // The tester keeps input values from earlier runs: print what is really used.
-   Log(StringFormat("CRT MTF EA v1.24 | entry %s %s | risk %.2f%% | max trades/day %s | session %s | "
+   Log(StringFormat("CRT MTF EA v1.25 | entry %s %s | risk %.2f%% | max trades/day %s | session %s | "
                     "min SL %.2f / %.1fx spread | min sweep %.0f%% | min RR %.2f | 50%% rule %s",
                     TfName(InpEntryTF), InpEntryMode == ENTRY_MICRO_1M ? "+1M micro" : "CRT close",
                     InpRiskPercent, InpMaxTradesDay > 0 ? IntegerToString(InpMaxTradesDay) : "NO LIMIT",
