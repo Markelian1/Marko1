@@ -5,9 +5,10 @@
 //
 // Rules taken from "How to trade the 1AM CRT" and "Time & Price":
 //
-//   1. HTF bias first (daily draw on liquidity). Here: the active daily
-//      CRT, else the previous daily candle; and premium / discount of the
-//      time-based range: sell in premium, buy in discount.
+//   1. HTF bias first (daily draw on liquidity). Here: the daily trend
+//      (previous daily close above / below its 50-day average), and
+//      premium / discount of the time-based range: sell in premium, buy
+//      in discount.
 //   2. Time-based range = the H4 candle(s) before the CRT candle.
 //      1AM candle -> 5PM + 9PM candles (CBDR / Asia range)
 //      5AM candle -> 1AM candle,   9AM candle -> 5AM candle
@@ -15,9 +16,10 @@
 //      comes back inside.
 //   4. OHLC / OLHC: sell above the CRT candle's opening price, buy below.
 //   5. Key time: 2:00-4:00 AM New York for the 1AM candle.
-//   6. Entry on M15, model #1: the candle that dug above the high
-//      (below the low) is the order block; when a later M15 candle closes
-//      through it (engulfs it), enter.
+//   6. Entry model #1: the candle that dug above the high (below the low)
+//      is the order block; when a later candle closes through it (engulfs
+//      it), enter. Entry timeframe M30 by default (tested better than M15
+//      on 2020-2026 XAUUSD data), M15 as an option.
 //   7. SL beyond the sweep extreme, TP at 1:2 / 1:3 RR (or the other side
 //      of the range = short-term draw on liquidity).
 //
@@ -28,9 +30,9 @@
 // block / FVG key levels (approximated by the premium/discount filter).
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.01"
+#property version   "1.02"
 #property description "Time-based CRT: the 1AM (5AM / 9AM) New York H4 candle sweeps the"
-#property description "prior range at key time; M15 order block entry. Built for XAUUSD."
+#property description "prior range at key time; M30 / M15 order block entry. Built for XAUUSD."
 
 #include <Trade/Trade.mqh>
 
@@ -44,7 +46,8 @@ enum ENUM_CRT_BIAS
    BIAS_NONE       = 0, // Off (both directions)
    BIAS_D1_CRT     = 1, // Active daily CRT only (no trade without one)
    BIAS_PREV_DAY   = 2, // Direction of the previous daily candle
-   BIAS_D1_OR_PREV = 3  // Daily CRT, else the previous daily candle
+   BIAS_D1_OR_PREV = 3, // Daily CRT, else the previous daily candle
+   BIAS_TREND      = 4  // Daily trend: previous close vs its N-day average
 };
 
 enum ENUM_CRT_PD
@@ -88,18 +91,20 @@ enum ENUM_CRT_TP
 input group "1. MODEL (New York time)"
 input bool InpTradeEnabled = true;  // Place trades (false = signals only)
 input int  InpNYOffset     = 7;     // Server time minus New York time (hours)
+input ENUM_TIMEFRAMES InpEntryTF = PERIOD_M30; // Entry / order-block timeframe (M5, M15, M30)
 input bool InpModel1AM     = true;  // 1AM candle (range = 5PM + 9PM candles)
 input int  InpKT1From      = 200;   // 1AM key time from (HHMM)
 input int  InpKT1To        = 400;   // 1AM key time to (HHMM)
-input bool InpModel5AM     = false; // 5AM candle (range = 1AM candle)
+input bool InpModel5AM     = true;  // 5AM candle (range = 1AM candle)
 input int  InpKT5From      = 500;   // 5AM key time from (HHMM)
 input int  InpKT5To        = 700;   // 5AM key time to (HHMM)
-input bool InpModel9AM     = false; // 9AM candle (range = 5AM candle)
+input bool InpModel9AM     = true;  // 9AM candle (range = 5AM candle)
 input int  InpKT9From      = 930;   // 9AM key time from (HHMM)
 input int  InpKT9To        = 1100;  // 9AM key time to (HHMM)
 
 input group "2. BIAS / PREMIUM-DISCOUNT"
-input ENUM_CRT_BIAS InpBias     = BIAS_D1_OR_PREV; // Higher-timeframe bias
+input ENUM_CRT_BIAS InpBias     = BIAS_TREND;      // Higher-timeframe bias
+input int           InpTrendDays = 50;             // Days in the trend average (bias = daily trend)
 input ENUM_CRT_PD   InpPremDisc = PD_RANGE;        // Premium/discount (sell above / buy below the middle)
 input bool          InpOHLC     = true;            // Sell only above / buy only below the CRT candle open
 
@@ -148,11 +153,11 @@ struct ModelDay
    double   pdMid;       // previous day's midpoint (premium above, discount below)
    bool     sweptHigh;
    double   sweepHigh;
-   double   obSellLow;   // low of the M15 candle that dug above the high
+   double   obSellLow;   // low of the candle that dug above the high
    datetime obSellTime;
    bool     sweptLow;
    double   sweepLow;
-   double   obBuyHigh;   // high of the M15 candle that dug below the low
+   double   obBuyHigh;   // high of the candle that dug below the low
    datetime obBuyTime;
    string   status;
 };
@@ -186,7 +191,9 @@ bool      g_mOn[MODELS];
 int       g_mFrom[MODELS];
 int       g_mTo[MODELS];
 
-datetime  g_lastM15   = 0;
+datetime  g_lastBar    = 0;          // open time of the entry-TF bar being formed
+ENUM_TIMEFRAMES g_tf   = PERIOD_M30;
+int       g_tfSec      = 1800;
 bool      g_ready     = false;
 bool      g_silent    = false;
 bool      g_noChart   = false;
@@ -505,7 +512,7 @@ void ResetModelDay(int m, datetime key)
    g_md[m].status     = "waiting";
 }
 
-// First M15 bar of a CRT candle: build the time-based range, read the
+// First entry-TF bar of a CRT candle: build the time-based range, read the
 // candle's open, the previous day's range and the higher-timeframe bias.
 void InitModelDay(int m, datetime crtNY)
 {
@@ -516,8 +523,8 @@ void InitModelDay(int m, datetime crtNY)
    datetime rngStart = crtSrv - g_mRange[m] * 4 * 3600;
 
    MqlRates rr[];
-   int n = CopyRates(_Symbol, PERIOD_M15, rngStart, crtSrv - 1, rr);
-   if(n < 4)
+   int n = CopyRates(_Symbol, g_tf, rngStart, crtSrv - 1, rr);
+   if(n < 2)
    {
       g_md[m].status = "no range data";
       g_fNoData++;
@@ -532,15 +539,19 @@ void InitModelDay(int m, datetime crtNY)
    }
 
    MqlRates oc[];
-   if(CopyRates(_Symbol, PERIOD_M15, crtSrv, crtSrv + 3600, oc) <= 0)
+   if(CopyRates(_Symbol, g_tf, crtSrv, crtSrv + 3600, oc) <= 0)
    {
       g_md[m].status = "no open";
       g_fNoData++;
       return;
    }
 
+   // dd[k-1] = the day that contains the CRT candle, dd[k-2] = previous day,
+   // dd[0..k-2] = the days of the trend average.
    MqlRates dd[];
-   if(CopyRates(_Symbol, PERIOD_D1, crtSrv, 2, dd) < 2)
+   int need = MathMax(2, InpTrendDays + 1);
+   int k    = CopyRates(_Symbol, PERIOD_D1, crtSrv, need, dd);
+   if(k < 2 || (InpBias == BIAS_TREND && k < need))
    {
       g_md[m].status = "no daily data";
       g_fNoData++;
@@ -550,17 +561,26 @@ void InitModelDay(int m, datetime crtNY)
    g_md[m].rngHigh = hi;
    g_md[m].rngLow  = lo;
    g_md[m].crtOpen = oc[0].open;
-   g_md[m].pdMid   = InpPremDisc == PD_PREV_DAY ? (dd[0].high + dd[0].low) / 2.0 : (hi + lo) / 2.0;
+   MqlRates prev = dd[k - 2];
+   g_md[m].pdMid   = InpPremDisc == PD_PREV_DAY ? (prev.high + prev.low) / 2.0 : (hi + lo) / 2.0;
 
-   int prevDir = dd[0].close > dd[0].open ? 1 : dd[0].close < dd[0].open ? 2 : 0;
+   int prevDir = prev.close > prev.open ? 1 : prev.close < prev.open ? 2 : 0;
    if(InpBias == BIAS_NONE)
       g_md[m].allowDir = 3;
    else if(InpBias == BIAS_D1_CRT)
       g_md[m].allowDir = g_d1.state;                 // 0 none, 1 buy, 2 sell
    else if(InpBias == BIAS_PREV_DAY)
       g_md[m].allowDir = prevDir;
-   else
+   else if(InpBias == BIAS_D1_OR_PREV)
       g_md[m].allowDir = g_d1.state != 0 ? g_d1.state : prevDir;
+   else
+   {
+      double sum = 0.0;
+      for(int j = 0; j < k - 1; j++)
+         sum += dd[j].close;
+      double avg = sum / (k - 1);
+      g_md[m].allowDir = prev.close > avg ? 1 : prev.close < avg ? 2 : 0;
+   }
 
    g_md[m].ok     = true;
    g_md[m].status = g_md[m].allowDir == 0 ? "no bias today" : "watching sweep";
@@ -702,7 +722,7 @@ bool TryEnter(int m, int dir, datetime sigNY, double extreme)
    return true;
 }
 
-// One closed M15 bar through the model.
+// One closed entry-TF bar through the model.
 void ModelStep(int m, const MqlRates &b, bool latest)
 {
    datetime ny    = ToNY(b.time);
@@ -726,7 +746,7 @@ void ModelStep(int m, const MqlRates &b, bool latest)
    bool buySig  = g_md[m].sweptLow && b.time > g_md[m].obBuyTime &&
                   b.close > g_md[m].obBuyHigh && b.close > g_md[m].rngLow;
 
-   datetime sigNY = ny + 900;   // the signal is known at the bar close
+   datetime sigNY = ny + g_tfSec;   // the signal is known at the bar close
    for(int k = 0; k < 2; k++)
    {
       int  dir = k == 0 ? 2 : 1;
@@ -960,7 +980,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "CRT 1AM EA v1.01  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
+   string s = "CRT 1AM EA v1.02  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
    s += "\n" + FunnelText() + "\nRejected: " + RejectText();
@@ -997,11 +1017,24 @@ int OnInit()
       Print("Invalid inputs");
       return INIT_PARAMETERS_INCORRECT;
    }
+   if(InpEntryTF != PERIOD_M5 && InpEntryTF != PERIOD_M15 && InpEntryTF != PERIOD_M30)
+   {
+      Print("Entry timeframe must be M5, M15 or M30");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if(InpBias == BIAS_TREND && (InpTrendDays < 2 || InpTrendDays > 250))
+   {
+      Print("Trend days must be 2-250");
+      return INIT_PARAMETERS_INCORRECT;
+   }
    if(!InpModel1AM && !InpModel5AM && !InpModel9AM)
    {
       Print("Enable at least one model");
       return INIT_PARAMETERS_INCORRECT;
    }
+
+   g_tf    = InpEntryTF;
+   g_tfSec = PeriodSeconds(g_tf);
 
    g_mOn[0] = InpModel1AM;  g_mFrom[0] = InpKT1From;  g_mTo[0] = InpKT1To;
    g_mOn[1] = InpModel5AM;  g_mFrom[1] = InpKT5From;  g_mTo[1] = InpKT5To;
@@ -1026,9 +1059,9 @@ int OnInit()
    if(!g_silent && !g_noChart)
       ObjectsDeleteAll(0, OBJ_PFX);
 
-   Log(StringFormat("CRT 1AM EA v1.01 | models %s%s%s | NY offset %d | bias %s | prem/disc %s | OHLC %s | TP %s | exit %04d NY",
-                    InpModel1AM ? "1AM " : "", InpModel5AM ? "5AM " : "", InpModel9AM ? "9AM " : "",
-                    InpNYOffset, EnumToString(InpBias), EnumToString(InpPremDisc), InpOHLC ? "on" : "off",
+   Log(StringFormat("CRT 1AM EA v1.02 | entry %s | models %s%s%s | NY offset %d | bias %s (%d days) | prem/disc %s | OHLC %s | TP %s | exit %04d NY",
+                    EnumToString(g_tf), InpModel1AM ? "1AM " : "", InpModel5AM ? "5AM " : "", InpModel9AM ? "9AM " : "",
+                    InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc), InpOHLC ? "on" : "off",
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpExitHHMM));
 
    if(!MQLInfoInteger(MQL_TESTER))
@@ -1036,7 +1069,7 @@ int OnInit()
           NYText(ToNY(TimeCurrent())) + ". If New York time is wrong, change InpNYOffset.");
 
    g_ready = D1Update();
-   g_lastM15 = iTime(_Symbol, PERIOD_M15, 0);
+   g_lastBar = iTime(_Symbol, g_tf, 0);
    return INIT_SUCCEEDED;
 }
 
@@ -1059,19 +1092,19 @@ void OnTick()
 
    CloseAtExitTime();
 
-   // Everything else runs once per closed M15 bar.
-   datetime m15Open = iTime(_Symbol, PERIOD_M15, 0);
-   if(m15Open <= 0 || m15Open == g_lastM15)
+   // Everything else runs once per closed entry-TF bar.
+   datetime barOpen = iTime(_Symbol, g_tf, 0);
+   if(barOpen <= 0 || barOpen == g_lastBar)
       return;
-   if(g_lastM15 == 0)
+   if(g_lastBar == 0)
    {
-      g_lastM15 = m15Open;
+      g_lastBar = barOpen;
       return;
    }
 
    MqlRates bars[];
-   int n = CopyRates(_Symbol, PERIOD_M15, g_lastM15, m15Open - 1, bars);
-   g_lastM15 = m15Open;
+   int n = CopyRates(_Symbol, g_tf, g_lastBar, barOpen - 1, bars);
+   g_lastBar = barOpen;
    if(n <= 0)
       return;
 

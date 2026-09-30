@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline backtest of CRT_1AM_EA (MQL5/Experts/CRT_1AM_EA.mq5, v1.01).
+"""Offline backtest of CRT_1AM_EA (MQL5/Experts/CRT_1AM_EA.mq5, v1.02).
 
 Replays M1 bars (server time) and runs the same rules as the EA:
 
@@ -8,20 +8,23 @@ Replays M1 bars (server time) and runs the same rules as the EA:
   - sweep of the range high/low; the M15 candle with the extreme is the
     order block; a later M15 close through it (and back inside the range)
     is the signal, which must fall inside the key time
-  - filters: daily CRT bias (else previous day), premium/discount of the
-    range, OHLC (sell above / buy below the CRT open), spread, min SL,
-    1 trade a day
+  - order block and signal on the entry timeframe (M30 by default)
+  - filters: daily trend (previous close vs 50-day average), premium/
+    discount of the range, OHLC (sell above / buy below the CRT open),
+    spread, min SL, 1 trade a day
   - entry at the first M1 open after the signal candle closes
   - SL beyond the sweep + buffer, TP at 1:RR, exit at 12:00 New York
 
 Stops and targets are checked on M1 bars (bid prices, ask = bid + spread).
 When one M1 bar touches both, the stop is assumed to fill first.
 
-Data: same as crt_backtest.py (--mt5 export of M1 bars, or --synthetic N).
-With --synthetic and --spread 0 the average R must be close to zero.
+Data: MT5 bar exports (any timeframe up to the entry timeframe; M30 bars
+give the M30 model, finer bars only refine the SL/TP order), or
+--synthetic N random-walk M1 bars. With --synthetic and --spread 0 the
+average R must be close to zero.
 
 Example:
-  python3 crt_1am_backtest.py --mt5 XAUUSD_M1_2023.csv XAUUSD_M1_2024.csv
+  python3 crt_1am_backtest.py --mt5 ../data/XAUUSD_M30.csv
 """
 import argparse
 import sys
@@ -34,7 +37,8 @@ M15 = 900
 DAY = 86400
 MODELS = {"1AM": (1, 2), "5AM": (5, 1), "9AM": (9, 1)}   # CRT hour (NY), H4 candles in the range
 
-DEFAULT = dict(ny_offset=7, models={"1AM": (200, 400)}, bias="d1|prev", pd="range", ohlc=True,
+DEFAULT = dict(ny_offset=7, tf=1800, sma=50,
+               models={"1AM": (200, 400), "5AM": (500, 700), "9AM": (930, 1100)}, bias="sma", pd="range", ohlc=True,
                tp="rr", rr=2.0, min_rr=1.5, sl_buffer=0.30, exit_hhmm=1200, max_day=1,
                min_sl=1.00, min_sl_x=4.0, max_spread=0.50)
 
@@ -58,6 +62,7 @@ class ModelDay:
 
 def run(bars, cfg):
     off = cfg["ny_offset"] * 3600
+    M15 = cfg["tf"]                 # entry timeframe in seconds (1800 = M30, 900 = M15)
     m15 = {}      # open time -> [t, o, h, l, c]
     d1 = {}       # server day -> [t, o, h, l, c]
     for t, o, h, l, c, _ in bars:
@@ -96,12 +101,18 @@ def run(bars, cfg):
         d.crt_open = first[1]
         d.pd_mid = ((prev[2] + prev[3]) if cfg["pd"] == "prev" else (d.rng_hi + d.rng_lo)) / 2.0
         prev_dir = 1 if prev[4] > prev[1] else 2 if prev[4] < prev[1] else 0
+        closes = [d1[x][4] for x in d1_days[max(0, i - cfg["sma"]):i]]
+        sma_dir = 0 if len(closes) < cfg["sma"] else 1 if prev[4] > sum(closes) / len(closes) else 2
         if cfg["bias"] == "none":
             d.allow = 3
         elif cfg["bias"] == "d1":
             d.allow = eng.state
         elif cfg["bias"] == "prev":
             d.allow = prev_dir
+        elif cfg["bias"] == "sma":
+            d.allow = sma_dir
+        elif cfg["bias"] == "long":
+            d.allow = 1
         else:
             d.allow = eng.state or prev_dir
         d.ok = True
@@ -243,12 +254,12 @@ def main():
     ap.add_argument("--synthetic", type=int, help="number of random-walk M1 bars")
     ap.add_argument("--spread", type=float, default=0.0, help="spread for --synthetic (price units)")
     ap.add_argument("--ny-offset", type=int, default=7, help="server time minus New York time (hours)")
-    ap.add_argument("--forward", default="2025-07-01", help="start of the forward period (YYYY-MM-DD)")
+    ap.add_argument("--forward", default="2024-01-01", help="start of the forward period (YYYY-MM-DD)")
     args = ap.parse_args()
 
     if args.mt5:
         bars, point = load_mt5(args.mt5)
-        src = f"MT5 export, {len(bars)} M1 bars, point {point}"
+        src = f"MT5 export, {len(bars)} bars, point {point}"
     elif args.synthetic:
         bars = make_synthetic(args.synthetic, args.spread)
         src = f"synthetic random walk, {len(bars)} M1 bars, spread {args.spread}"
@@ -264,17 +275,19 @@ def main():
 
     base = dict(DEFAULT, ny_offset=args.ny_offset)
     configs = [
-        ("EA defaults (1AM)", base),
+        ("EA defaults v1.02", base),
+        ("1AM only", dict(base, models={"1AM": (200, 400)})),
+        ("entry M15", dict(base, tf=900)),
+        ("trend 20 days", dict(base, sma=20)),
+        ("trend 100 days", dict(base, sma=100)),
         ("bias off", dict(base, bias="none")),
-        ("bias D1 CRT only", dict(base, bias="d1")),
-        ("bias prev day", dict(base, bias="prev")),
+        ("bias daily CRT", dict(base, bias="d1")),
+        ("bias CRT|prev (v1.01)", dict(base, bias="d1|prev")),
+        ("OHLC off", dict(base, ohlc=False)),
         ("prem/disc off", dict(base, pd="off")),
-        ("prem/disc prev day", dict(base, pd="prev")),
-        ("no OHLC", dict(base, ohlc=False)),
+        ("RR 1.5", dict(base, rr=1.5)),
         ("RR 3", dict(base, rr=3.0)),
         ("TP range side", dict(base, tp="range")),
-        ("1AM+5AM+9AM", dict(base, max_day=2, models={"1AM": (200, 400), "5AM": (500, 700),
-                                                      "9AM": (930, 1100)})),
     ]
     print(HEADER)
     for name, cfg in configs:

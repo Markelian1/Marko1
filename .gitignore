@@ -29,3 +29,6 @@ __pycache__/
 
 # MetaTrader compiled experts
 *.ex5
+
+# Broker bar exports used by the offline backtests
+data/
