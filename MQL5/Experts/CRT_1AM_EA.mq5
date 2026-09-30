@@ -6,8 +6,8 @@
 // Rules taken from "How to trade the 1AM CRT" and "Time & Price":
 //
 //   1. HTF bias first (daily draw on liquidity). Here: the active daily
-//      CRT (or the previous daily candle), and premium / discount of the
-//      previous day's range: sell in premium, buy in discount.
+//      CRT, else the previous daily candle; and premium / discount of the
+//      time-based range: sell in premium, buy in discount.
 //   2. Time-based range = the H4 candle(s) before the CRT candle.
 //      1AM candle -> 5PM + 9PM candles (CBDR / Asia range)
 //      5AM candle -> 1AM candle,   9AM candle -> 5AM candle
@@ -28,7 +28,7 @@
 // block / FVG key levels (approximated by the premium/discount filter).
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.00"
+#property version   "1.01"
 #property description "Time-based CRT: the 1AM (5AM / 9AM) New York H4 candle sweeps the"
 #property description "prior range at key time; M15 order block entry. Built for XAUUSD."
 
@@ -41,10 +41,38 @@
 
 enum ENUM_CRT_BIAS
 {
-   BIAS_NONE     = 0, // Off (both directions)
-   BIAS_D1_CRT   = 1, // Active daily CRT direction (no trade without one)
-   BIAS_PREV_DAY = 2  // Direction of the previous daily candle
+   BIAS_NONE       = 0, // Off (both directions)
+   BIAS_D1_CRT     = 1, // Active daily CRT only (no trade without one)
+   BIAS_PREV_DAY   = 2, // Direction of the previous daily candle
+   BIAS_D1_OR_PREV = 3  // Daily CRT, else the previous daily candle
 };
+
+enum ENUM_CRT_PD
+{
+   PD_OFF      = 0, // Off
+   PD_RANGE    = 1, // Half of the time-based range (Asia range for 1AM)
+   PD_PREV_DAY = 2  // Half of the previous day's range
+};
+
+// Why a signal was not traded (counted for the funnel report).
+enum ENUM_REJECT
+{
+   REJ_SIGNALS_ONLY = 0,
+   REJ_KEY_TIME,
+   REJ_BIAS,
+   REJ_POSITION,
+   REJ_MAX_TRADES,
+   REJ_SPREAD,
+   REJ_OHLC,
+   REJ_PD,
+   REJ_SL_SIDE,
+   REJ_SL_SMALL,
+   REJ_RR,
+   REJ_LOTS,
+   REJ_ORDER,
+   REJ_STALE
+};
+#define REJECTS 14   // number of ENUM_REJECT values
 
 enum ENUM_CRT_TP
 {
@@ -71,9 +99,9 @@ input int  InpKT9From      = 930;   // 9AM key time from (HHMM)
 input int  InpKT9To        = 1100;  // 9AM key time to (HHMM)
 
 input group "2. BIAS / PREMIUM-DISCOUNT"
-input ENUM_CRT_BIAS InpBias     = BIAS_D1_CRT; // Higher-timeframe bias
-input bool          InpPremDisc = true;        // Sell only in premium / buy only in discount (previous day)
-input bool          InpOHLC     = true;        // Sell only above / buy only below the CRT candle open
+input ENUM_CRT_BIAS InpBias     = BIAS_D1_OR_PREV; // Higher-timeframe bias
+input ENUM_CRT_PD   InpPremDisc = PD_RANGE;        // Premium/discount (sell above / buy below the middle)
+input bool          InpOHLC     = true;            // Sell only above / buy only below the CRT candle open
 
 input group "3. RISK / EXIT"
 input double InpRiskPercent  = 0.5;    // Risk per trade (% of balance)
@@ -163,6 +191,15 @@ bool      g_ready     = false;
 bool      g_silent    = false;
 bool      g_noChart   = false;
 string    g_lastSkip  = "-";
+
+// Funnel: how many CRT candles, sweeps and order-block breaks there were
+// and why the signals were not traded.
+int       g_fCandles = 0, g_fNoData = 0, g_fNoBias = 0;
+int       g_fHighSweeps = 0, g_fLowSweeps = 0, g_fBreaks = 0, g_fTrades = 0;
+int       g_rej[REJECTS];
+string    g_rejName[REJECTS] = {"signals only", "key time", "against bias", "position open", "max trades",
+                                "spread", "OHLC", "premium/discount", "SL side", "SL too small", "RR",
+                                "lot size", "order failed", "stale"};
 long      g_objSeq    = 0;
 
 int       g_stN = 0, g_stWin = 0, g_stSL = 0, g_stTP = 0, g_stOther = 0;
@@ -281,10 +318,26 @@ int TradesToday()
    return cnt;
 }
 
-void Skip(string reason)
+void Skip(int why, string reason)
 {
+   g_rej[why]++;
    g_lastSkip = reason;
    Log("SKIP: " + reason);
+}
+
+string FunnelText()
+{
+   return StringFormat("CRT candles %d | no data %d | no bias %d | high sweeps %d | low sweeps %d | OB breaks %d | trades %d",
+                       g_fCandles, g_fNoData, g_fNoBias, g_fHighSweeps, g_fLowSweeps, g_fBreaks, g_fTrades);
+}
+
+string RejectText()
+{
+   string s = "";
+   for(int i = 0; i < REJECTS; i++)
+      if(g_rej[i] > 0)
+         s += (s == "" ? "" : " | ") + g_rejName[i] + " " + IntegerToString(g_rej[i]);
+   return s == "" ? "none" : s;
 }
 
 
@@ -457,6 +510,7 @@ void ResetModelDay(int m, datetime key)
 void InitModelDay(int m, datetime crtNY)
 {
    ResetModelDay(m, crtNY);
+   g_fCandles++;
 
    datetime crtSrv   = ToServer(crtNY);
    datetime rngStart = crtSrv - g_mRange[m] * 4 * 3600;
@@ -466,6 +520,7 @@ void InitModelDay(int m, datetime crtNY)
    if(n < 4)
    {
       g_md[m].status = "no range data";
+      g_fNoData++;
       return;
    }
    double hi = rr[0].high;
@@ -480,6 +535,7 @@ void InitModelDay(int m, datetime crtNY)
    if(CopyRates(_Symbol, PERIOD_M15, crtSrv, crtSrv + 3600, oc) <= 0)
    {
       g_md[m].status = "no open";
+      g_fNoData++;
       return;
    }
 
@@ -487,23 +543,29 @@ void InitModelDay(int m, datetime crtNY)
    if(CopyRates(_Symbol, PERIOD_D1, crtSrv, 2, dd) < 2)
    {
       g_md[m].status = "no daily data";
+      g_fNoData++;
       return;
    }
 
    g_md[m].rngHigh = hi;
    g_md[m].rngLow  = lo;
    g_md[m].crtOpen = oc[0].open;
-   g_md[m].pdMid   = (dd[0].high + dd[0].low) / 2.0;
+   g_md[m].pdMid   = InpPremDisc == PD_PREV_DAY ? (dd[0].high + dd[0].low) / 2.0 : (hi + lo) / 2.0;
 
+   int prevDir = dd[0].close > dd[0].open ? 1 : dd[0].close < dd[0].open ? 2 : 0;
    if(InpBias == BIAS_NONE)
       g_md[m].allowDir = 3;
    else if(InpBias == BIAS_D1_CRT)
       g_md[m].allowDir = g_d1.state;                 // 0 none, 1 buy, 2 sell
+   else if(InpBias == BIAS_PREV_DAY)
+      g_md[m].allowDir = prevDir;
    else
-      g_md[m].allowDir = dd[0].close > dd[0].open ? 1 : dd[0].close < dd[0].open ? 2 : 0;
+      g_md[m].allowDir = g_d1.state != 0 ? g_d1.state : prevDir;
 
    g_md[m].ok     = true;
    g_md[m].status = g_md[m].allowDir == 0 ? "no bias today" : "watching sweep";
+   if(g_md[m].allowDir == 0)
+      g_fNoBias++;
 
    DrawBox(rngStart, crtSrv, lo, hi, clrDarkSlateGray);
    DrawLevel(crtSrv, crtSrv + 4 * 3600, g_md[m].crtOpen, clrGold, STYLE_DOT);
@@ -525,33 +587,33 @@ bool InKeyTime(int m, datetime ny)
 }
 
 // Checks the filters and sends the order. dir 1 = buy, 2 = sell.
-bool TryEnter(int m, int dir, datetime sigNY)
+bool TryEnter(int m, int dir, datetime sigNY, double extreme)
 {
    string tag = g_mName[m] + (dir == 1 ? " BUY" : " SELL");
 
    if(!InpTradeEnabled)
    {
-      Skip(tag + ": signals only");
+      Skip(REJ_SIGNALS_ONLY, tag + ": signals only");
       return false;
    }
    if(!InKeyTime(m, sigNY))
    {
-      Skip(tag + ": outside key time " + NYText(sigNY));
+      Skip(REJ_KEY_TIME, tag + ": outside key time " + NYText(sigNY));
       return false;
    }
    if((g_md[m].allowDir & dir) == 0)
    {
-      Skip(tag + ": against HTF bias");
+      Skip(REJ_BIAS, tag + ": against HTF bias");
       return false;
    }
    if(HasOpenPosition())
    {
-      Skip(tag + ": position already open");
+      Skip(REJ_POSITION, tag + ": position already open");
       return false;
    }
    if(InpMaxTradesDay > 0 && TradesToday() >= InpMaxTradesDay)
    {
-      Skip(tag + ": max trades today");
+      Skip(REJ_MAX_TRADES, tag + ": max trades today");
       return false;
    }
 
@@ -562,34 +624,34 @@ bool TryEnter(int m, int dir, datetime sigNY)
 
    if(InpMaxSpread > 0.0 && spread > InpMaxSpread)
    {
-      Skip(tag + ": spread " + DoubleToString(spread, _Digits));
+      Skip(REJ_SPREAD, tag + ": spread " + DoubleToString(spread, _Digits));
       return false;
    }
    // OHLC: sell above the CRT candle's open, buy below it.
    if(InpOHLC && ((dir == 2 && bid < g_md[m].crtOpen) || (dir == 1 && ask > g_md[m].crtOpen)))
    {
-      Skip(tag + ": wrong side of the CRT open");
+      Skip(REJ_OHLC, tag + ": wrong side of the CRT open");
       return false;
    }
-   // Premium / discount of the previous day.
-   if(InpPremDisc && ((dir == 2 && bid < g_md[m].pdMid) || (dir == 1 && ask > g_md[m].pdMid)))
+   // Premium / discount: sell above / buy below the middle of the range (or previous day).
+   if(InpPremDisc != PD_OFF && ((dir == 2 && bid < g_md[m].pdMid) || (dir == 1 && ask > g_md[m].pdMid)))
    {
-      Skip(tag + (dir == 2 ? ": not in premium" : ": not in discount"));
+      Skip(REJ_PD, tag + (dir == 2 ? ": not in premium" : ": not in discount"));
       return false;
    }
 
-   double sl   = NormPrice(dir == 1 ? g_md[m].sweepLow - InpSLBuffer : g_md[m].sweepHigh + InpSLBuffer);
+   double sl   = NormPrice(dir == 1 ? extreme - InpSLBuffer : extreme + InpSLBuffer);
    double risk = dir == 1 ? entry - sl : sl - entry;
    if(risk <= 0.0)
    {
-      Skip(tag + ": SL on the wrong side");
+      Skip(REJ_SL_SIDE, tag + ": SL on the wrong side");
       return false;
    }
    double minRisk = MathMax(InpMinSL, InpMinSLSpreadX * spread);
    double minDist = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
    if(risk < minRisk || risk < minDist)
    {
-      Skip(StringFormat("%s: SL %s too small", tag, DoubleToString(risk, _Digits)));
+      Skip(REJ_SL_SMALL, StringFormat("%s: SL %s too small", tag, DoubleToString(risk, _Digits)));
       return false;
    }
 
@@ -602,7 +664,7 @@ bool TryEnter(int m, int dir, datetime sigNY)
       double reward = dir == 1 ? tp - entry : entry - tp;
       if(reward <= 0.0 || reward / risk < InpMinRR)
       {
-         Skip(StringFormat("%s: RR %.2f < %.2f", tag, reward / risk, InpMinRR));
+         Skip(REJ_RR, StringFormat("%s: RR %.2f < %.2f", tag, reward / risk, InpMinRR));
          return false;
       }
    }
@@ -611,7 +673,7 @@ bool TryEnter(int m, int dir, datetime sigNY)
    double lots = CalcLots(dir, entry, sl);
    if(lots <= 0.0)
    {
-      Skip(tag + ": lot size below broker minimum");
+      Skip(REJ_LOTS, tag + ": lot size below broker minimum");
       return false;
    }
 
@@ -621,7 +683,7 @@ bool TryEnter(int m, int dir, datetime sigNY)
    uint rc = g_trade.ResultRetcode();
    if(!ok || (rc != TRADE_RETCODE_DONE && rc != TRADE_RETCODE_PLACED))
    {
-      Skip(StringFormat("%s: order failed %u %s", tag, rc, g_trade.ResultRetcodeDescription()));
+      Skip(REJ_ORDER, StringFormat("%s: order failed %u %s", tag, rc, g_trade.ResultRetcodeDescription()));
       return false;
    }
 
@@ -632,6 +694,7 @@ bool TryEnter(int m, int dir, datetime sigNY)
       SetPlannedRisk(g_trade.ResultOrder(), -pnlAtSl);
 
    g_lastSkip = "-";
+   g_fTrades++;
    Log(StringFormat("%s %s lots | entry %s  SL %s  TP %s | range %s-%s | %s",
                     tag, DoubleToString(lots, 2), PriceText(entry), PriceText(sl), PriceText(tp),
                     PriceText(g_md[m].rngLow), PriceText(g_md[m].rngHigh), NYText(sigNY)));
@@ -653,33 +716,10 @@ void ModelStep(int m, const MqlRates &b, bool latest)
       return;
 
    // ------------------------------------------------------------------
-   // Sweep of the range high: the candle with the highest high is the
-   // sell order block (it "dug above the high").
-   // ------------------------------------------------------------------
-   if(b.high > g_md[m].rngHigh && (!g_md[m].sweptHigh || b.high > g_md[m].sweepHigh))
-   {
-      if(!g_md[m].sweptHigh)
-         DrawLabel(b.time, b.high, g_mName[m] + " sweep", clrOrange, true);
-      g_md[m].sweptHigh  = true;
-      g_md[m].sweepHigh  = b.high;
-      g_md[m].obSellLow  = b.low;
-      g_md[m].obSellTime = b.time;
-      g_md[m].status     = "high swept, waiting for OB break";
-   }
-   if(b.low < g_md[m].rngLow && (!g_md[m].sweptLow || b.low < g_md[m].sweepLow))
-   {
-      if(!g_md[m].sweptLow)
-         DrawLabel(b.time, b.low, g_mName[m] + " sweep", clrOrange, false);
-      g_md[m].sweptLow  = true;
-      g_md[m].sweepLow  = b.low;
-      g_md[m].obBuyHigh = b.high;
-      g_md[m].obBuyTime = b.time;
-      g_md[m].status    = "low swept, waiting for OB break";
-   }
-
-   // ------------------------------------------------------------------
-   // Model #1: a later candle closes through the order block and back
-   // inside the range.
+   // Model #1: a later candle closes through the order block (the candle
+   // that dug above the high / below the low) and back inside the range.
+   // Checked before the sweep update, so an engulfing candle that also
+   // makes a new extreme still counts; its extreme goes into the SL.
    // ------------------------------------------------------------------
    bool sellSig = g_md[m].sweptHigh && b.time > g_md[m].obSellTime &&
                   b.close < g_md[m].obSellLow && b.close < g_md[m].rngHigh;
@@ -694,12 +734,16 @@ void ModelStep(int m, const MqlRates &b, bool latest)
       if(!sig)
          continue;
 
+      g_fBreaks++;
       if(InpVerbose)
          Log(StringFormat("[%s] %s OB break at %s", g_mName[m], dir == 2 ? "SELL" : "BUY", NYText(sigNY)));
 
-      bool entered = latest ? TryEnter(m, dir, sigNY) : false;
-      if(!latest)
-         Skip(g_mName[m] + ": stale signal");
+      double extreme = dir == 2 ? MathMax(g_md[m].sweepHigh, b.high) : MathMin(g_md[m].sweepLow, b.low);
+      bool entered = false;
+      if(latest)
+         entered = TryEnter(m, dir, sigNY, extreme);
+      else
+         Skip(REJ_STALE, g_mName[m] + ": stale signal");
 
       // This order block is used up either way; a new sweep extreme makes a new one.
       if(dir == 2)
@@ -711,8 +755,39 @@ void ModelStep(int m, const MqlRates &b, bool latest)
       {
          g_md[m].done   = true;
          g_md[m].status = "traded";
-         break;
+         return;
       }
+   }
+
+   // ------------------------------------------------------------------
+   // Sweep of the range high: the candle with the highest high is the
+   // sell order block. Mirror image for the low.
+   // ------------------------------------------------------------------
+   if(b.high > g_md[m].rngHigh && (!g_md[m].sweptHigh || b.high > g_md[m].sweepHigh))
+   {
+      if(!g_md[m].sweptHigh)
+      {
+         g_fHighSweeps++;
+         DrawLabel(b.time, b.high, g_mName[m] + " sweep", clrOrange, true);
+      }
+      g_md[m].sweptHigh  = true;
+      g_md[m].sweepHigh  = b.high;
+      g_md[m].obSellLow  = b.low;
+      g_md[m].obSellTime = b.time;
+      g_md[m].status     = "high swept, waiting for OB break";
+   }
+   if(b.low < g_md[m].rngLow && (!g_md[m].sweptLow || b.low < g_md[m].sweepLow))
+   {
+      if(!g_md[m].sweptLow)
+      {
+         g_fLowSweeps++;
+         DrawLabel(b.time, b.low, g_mName[m] + " sweep", clrOrange, false);
+      }
+      g_md[m].sweptLow  = true;
+      g_md[m].sweepLow  = b.low;
+      g_md[m].obBuyHigh = b.high;
+      g_md[m].obBuyTime = b.time;
+      g_md[m].status    = "low swept, waiting for OB break";
    }
 }
 
@@ -783,6 +858,8 @@ void RemoveRisk(int i)
 
 void PrintTradeSummary()
 {
+   Print("CRT 1AM FUNNEL: " + FunnelText());
+   Print("CRT 1AM REJECTED: " + RejectText());
    if(g_stN == 0)
    {
       Print("CRT 1AM SUMMARY: no closed trades");
@@ -883,9 +960,10 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "CRT 1AM EA v1.00  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
+   string s = "CRT 1AM EA v1.01  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
+   s += "\n" + FunnelText() + "\nRejected: " + RejectText();
 
    for(int m = 0; m < MODELS; m++)
    {
@@ -930,6 +1008,8 @@ int OnInit()
    g_mOn[2] = InpModel9AM;  g_mFrom[2] = InpKT9From;  g_mTo[2] = InpKT9To;
    for(int m = 0; m < MODELS; m++)
       ResetModelDay(m, 0);
+   ArrayInitialize(g_rej, 0);
+   g_fCandles = g_fNoData = g_fNoBias = g_fHighSweeps = g_fLowSweeps = g_fBreaks = g_fTrades = 0;
 
    g_silent  = (bool)MQLInfoInteger(MQL_OPTIMIZATION);
    g_noChart = (bool)MQLInfoInteger(MQL_TESTER) && !(bool)MQLInfoInteger(MQL_VISUAL_MODE);
@@ -946,10 +1026,14 @@ int OnInit()
    if(!g_silent && !g_noChart)
       ObjectsDeleteAll(0, OBJ_PFX);
 
-   Log(StringFormat("CRT 1AM EA v1.00 | models %s%s%s | NY offset %d | bias %s | prem/disc %s | OHLC %s | TP %s | exit %04d NY",
+   Log(StringFormat("CRT 1AM EA v1.01 | models %s%s%s | NY offset %d | bias %s | prem/disc %s | OHLC %s | TP %s | exit %04d NY",
                     InpModel1AM ? "1AM " : "", InpModel5AM ? "5AM " : "", InpModel9AM ? "9AM " : "",
-                    InpNYOffset, EnumToString(InpBias), InpPremDisc ? "on" : "off", InpOHLC ? "on" : "off",
+                    InpNYOffset, EnumToString(InpBias), EnumToString(InpPremDisc), InpOHLC ? "on" : "off",
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpExitHHMM));
+
+   if(!MQLInfoInteger(MQL_TESTER))
+      Log("Server time " + TimeToString(TimeCurrent(), TIME_DATE | TIME_MINUTES) + " = New York " +
+          NYText(ToNY(TimeCurrent())) + ". If New York time is wrong, change InpNYOffset.");
 
    g_ready = D1Update();
    g_lastM15 = iTime(_Symbol, PERIOD_M15, 0);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline backtest of CRT_1AM_EA (MQL5/Experts/CRT_1AM_EA.mq5, v1.00).
+"""Offline backtest of CRT_1AM_EA (MQL5/Experts/CRT_1AM_EA.mq5, v1.01).
 
 Replays M1 bars (server time) and runs the same rules as the EA:
 
@@ -8,8 +8,9 @@ Replays M1 bars (server time) and runs the same rules as the EA:
   - sweep of the range high/low; the M15 candle with the extreme is the
     order block; a later M15 close through it (and back inside the range)
     is the signal, which must fall inside the key time
-  - filters: daily CRT bias, premium/discount of the previous day, OHLC
-    (sell above / buy below the CRT open), spread, min SL, 1 trade a day
+  - filters: daily CRT bias (else previous day), premium/discount of the
+    range, OHLC (sell above / buy below the CRT open), spread, min SL,
+    1 trade a day
   - entry at the first M1 open after the signal candle closes
   - SL beyond the sweep + buffer, TP at 1:RR, exit at 12:00 New York
 
@@ -33,7 +34,7 @@ M15 = 900
 DAY = 86400
 MODELS = {"1AM": (1, 2), "5AM": (5, 1), "9AM": (9, 1)}   # CRT hour (NY), H4 candles in the range
 
-DEFAULT = dict(ny_offset=7, models={"1AM": (200, 400)}, bias="d1", prem_disc=True, ohlc=True,
+DEFAULT = dict(ny_offset=7, models={"1AM": (200, 400)}, bias="d1|prev", pd="range", ohlc=True,
                tp="rr", rr=2.0, min_rr=1.5, sl_buffer=0.30, exit_hhmm=1200, max_day=1,
                min_sl=1.00, min_sl_x=4.0, max_spread=0.50)
 
@@ -74,7 +75,7 @@ def run(bars, cfg):
     eng = Engine()
     d1_fed = 0                       # number of daily bars fed to the engine
     md = {}
-    trades, skips = [], defaultdict(int)
+    trades, skips, funnel = [], defaultdict(int), defaultdict(int)
     pos = None
     entries_day = defaultdict(int)
     cur_m15 = None
@@ -93,17 +94,20 @@ def run(bars, cfg):
         d.rng_hi = max(b[2] for b in rng)
         d.rng_lo = min(b[3] for b in rng)
         d.crt_open = first[1]
-        d.pd_mid = (prev[2] + prev[3]) / 2.0
+        d.pd_mid = ((prev[2] + prev[3]) if cfg["pd"] == "prev" else (d.rng_hi + d.rng_lo)) / 2.0
+        prev_dir = 1 if prev[4] > prev[1] else 2 if prev[4] < prev[1] else 0
         if cfg["bias"] == "none":
             d.allow = 3
         elif cfg["bias"] == "d1":
             d.allow = eng.state
+        elif cfg["bias"] == "prev":
+            d.allow = prev_dir
         else:
-            d.allow = 1 if prev[4] > prev[1] else 2 if prev[4] < prev[1] else 0
+            d.allow = eng.state or prev_dir
         d.ok = True
         return d
 
-    def try_enter(name, d, direction, sig_ny, bar):
+    def try_enter(name, d, direction, sig_ny, bar, extreme):
         t, o, h, l, c, spread = bar
         frm, to = cfg["models"][name]
         m = (sig_ny % DAY) // 60
@@ -122,9 +126,9 @@ def run(bars, cfg):
         entry = ask if direction == 1 else bid
         if cfg["ohlc"] and ((direction == 2 and bid < d.crt_open) or (direction == 1 and ask > d.crt_open)):
             return "OHLC"
-        if cfg["prem_disc"] and ((direction == 2 and bid < d.pd_mid) or (direction == 1 and ask > d.pd_mid)):
+        if cfg["pd"] != "off" and ((direction == 2 and bid < d.pd_mid) or (direction == 1 and ask > d.pd_mid)):
             return "premium/discount"
-        sl = d.sweep_lo - cfg["sl_buffer"] if direction == 1 else d.sweep_hi + cfg["sl_buffer"]
+        sl = extreme - cfg["sl_buffer"] if direction == 1 else extreme + cfg["sl_buffer"]
         risk = entry - sl if direction == 1 else sl - entry
         if risk <= 0:
             return "SL side"
@@ -165,19 +169,20 @@ def run(bars, cfg):
                 d = md.get(name)
                 if d is None or d.key != crt_ny:
                     d = md[name] = init_day(name, crt_ny)
+                    funnel["candles"] += 1
+                    funnel["no data" if not d.ok else "no bias" if d.allow == 0 else "watched"] += 1
                 if not d.ok or d.done or d.allow == 0:
                     continue
                 _, bo, bh, bl, bc = closed
-                if bh > d.rng_hi and (not d.swept_hi or bh > d.sweep_hi):
-                    d.swept_hi, d.sweep_hi, d.ob_sell_low, d.ob_sell_t = True, bh, bl, closed[0]
-                if bl < d.rng_lo and (not d.swept_lo or bl < d.sweep_lo):
-                    d.swept_lo, d.sweep_lo, d.ob_buy_high, d.ob_buy_t = True, bl, bh, closed[0]
+                # signals first: an engulfing candle that also makes a new extreme still counts
                 sell = d.swept_hi and closed[0] > d.ob_sell_t and bc < d.ob_sell_low and bc < d.rng_hi
                 buy = d.swept_lo and closed[0] > d.ob_buy_t and bc > d.ob_buy_high and bc > d.rng_lo
                 for direction, sig in ((2, sell), (1, buy)):
                     if not sig:
                         continue
-                    res = try_enter(name, d, direction, ny + M15, bar)
+                    funnel["OB breaks"] += 1
+                    extreme = max(d.sweep_hi, bh) if direction == 2 else min(d.sweep_lo, bl)
+                    res = try_enter(name, d, direction, ny + M15, bar, extreme)
                     if direction == 2:
                         d.ob_sell_t = float("inf")
                     else:
@@ -187,6 +192,16 @@ def run(bars, cfg):
                         d.done = True
                         break
                     skips[res] += 1
+                if d.done:
+                    continue
+                if bh > d.rng_hi and (not d.swept_hi or bh > d.sweep_hi):
+                    if not d.swept_hi:
+                        funnel["high sweeps"] += 1
+                    d.swept_hi, d.sweep_hi, d.ob_sell_low, d.ob_sell_t = True, bh, bl, closed[0]
+                if bl < d.rng_lo and (not d.swept_lo or bl < d.sweep_lo):
+                    if not d.swept_lo:
+                        funnel["low sweeps"] += 1
+                    d.swept_lo, d.sweep_lo, d.ob_buy_high, d.ob_buy_t = True, bl, bh, closed[0]
         cur_m15 = k
 
         if pos is None:
@@ -219,7 +234,7 @@ def run(bars, cfg):
                 close(pos, pos["tp"], t, "TP")
                 pos = None
 
-    return trades, skips
+    return trades, skips, funnel
 
 
 def main():
@@ -251,8 +266,10 @@ def main():
     configs = [
         ("EA defaults (1AM)", base),
         ("bias off", dict(base, bias="none")),
+        ("bias D1 CRT only", dict(base, bias="d1")),
         ("bias prev day", dict(base, bias="prev")),
-        ("no prem/disc", dict(base, prem_disc=False)),
+        ("prem/disc off", dict(base, pd="off")),
+        ("prem/disc prev day", dict(base, pd="prev")),
         ("no OHLC", dict(base, ohlc=False)),
         ("RR 3", dict(base, rr=3.0)),
         ("TP range side", dict(base, tp="range")),
@@ -261,7 +278,7 @@ def main():
     ]
     print(HEADER)
     for name, cfg in configs:
-        trades, skips = run(bars, cfg)
+        trades, skips, funnel = run(bars, cfg)
         print(fmt_row(name, stats(trades)))
         print(fmt_row("  before forward", stats([t for t in trades if t["t_in"] < fwd])))
         print(fmt_row("  forward", stats([t for t in trades if t["t_in"] >= fwd])))
@@ -275,6 +292,7 @@ def main():
             for t in trades:
                 exits[t["why"]].append(t["r"])
             print("  exits: " + ", ".join(f"{k} {len(v)} x {sum(v) / len(v):+.2f}R" for k, v in sorted(exits.items())))
+            print("  funnel: " + ", ".join(f"{k} {v}" for k, v in funnel.items()))
             print("  skipped signals: " + ", ".join(f"{k} {v}" for k, v in sorted(skips.items(), key=lambda x: -x[1])))
             bad = sum(1 for t in trades if (t["dir"] == 1 and not t["sl"] < t["entry"] < t["tp"]) or
                       (t["dir"] == 2 and not t["tp"] < t["entry"] < t["sl"]))

@@ -154,7 +154,7 @@ Optimizimi 2 (vetëm "Require an active HTF CRT in the same direction"):
 
 # CRT 1AM EA (MT5): strategjia nga PDF-të "1AM CRT" dhe "Time & Price"
 
-Skedari: `Experts/CRT_1AM_EA.mq5` (v1.00). Është EA e re, e veçantë nga CRT_MTF_EA.
+Skedari: `Experts/CRT_1AM_EA.mq5` (v1.01). Është EA e re, e veçantë nga CRT_MTF_EA.
 Nuk hap trade në çdo CRT, por vetëm në qiririn H4 të orës **1:00 New York** dhe
 vetëm në orën kyçe.
 
@@ -162,13 +162,13 @@ vetëm në orën kyçe.
 
 | Rregulli në PDF | Në EA | Input |
 |---|---|---|
-| Bias nga HTF (drejtimi ditor, DOL) | CRT-ja ditore aktive jep drejtimin; pa CRT ditore nuk ka trade | `InpBias` |
+| Bias nga HTF (drejtimi ditor, DOL) | CRT-ja ditore aktive jep drejtimin; kur nuk ka, drejtimi i qiririt ditor të kaluar | `InpBias` |
 | Range-i kohor: qirinjtë 5PM + 9PM (Asia/CBDR) | High/low i 17:00–01:00 NY | automatik |
 | Qiriri 1AM bën sweep të high/low të range-it (turtle soup) | Ndiqet çdo qiri M15 brenda 01:00–05:00 NY | automatik |
 | OHLC / OLHC: sell mbi open, buy nën open | Sell vetëm kur çmimi është mbi open-in e qiririt 1AM | `InpOHLC` |
-| Premium / discount | Sell vetëm mbi mesin e ditës së kaluar, buy vetëm poshtë tij | `InpPremDisc` |
+| Premium / discount | Sell vetëm mbi mesin e range-it kohor (Asia), buy vetëm poshtë tij | `InpPremDisc` |
 | Ora kyçe 2:00–4:00 AM NY | Sinjali pranohet vetëm në këtë orar | `InpKT1From`, `InpKT1To` |
-| Hyrja M15, modeli #1: qiriri që "gërmoi" mbi high-in, pastaj engulf | Qiriri M15 me high-in më të lartë është OB; hyrje kur një qiri M15 mbyllet nën low-in e tij dhe brenda range-it | automatik |
+| Hyrja M15, modeli #1: qiriri që "gërmoi" mbi high-in, pastaj engulf | Qiriri M15 me high-in më të lartë është OB; hyrje kur një qiri M15 mbyllet nën low-in e tij dhe brenda range-it (edhe kur ky qiri bën vetë një high të ri) | automatik |
 | SL përtej sweep-it | SL = maja e sweep-it + 0.30 $ | `InpSLBuffer` |
 | TP 1:2 ose 1:3 | TP = 2R (mund ta bësh 3) ose ana tjetër e range-it | `InpTPMode`, `InpRR` |
 | Modelet 5AM dhe 9AM (forex key times) | Opsionale, të fikura | `InpModel5AM`, `InpModel9AM` |
@@ -187,6 +187,30 @@ EA-ja i llogarit të gjitha oraret në kohën e New York-ut:
   është 00:00, serveri duhet të tregojë 07:00. Nëse jo, ndryshoje `InpNYOffset`.
 - Te paneli i EA-së shfaqet "New York time"; duhet të përputhet me orën reale të NY.
 
+## v1.01: pse v1.00 nuk dha asnjë hyrje
+
+v1.00 kishte njëkohësisht tre filtra shumë të ngushtë:
+- tregtonte vetëm kur kishte CRT ditore aktive (rreth 60% e ditëve nuk kanë);
+- premium/discount i matur me ditën e kaluar;
+- qiriri që bënte engulf dhe njëkohësisht një high/low të ri nuk llogaritej si hyrje.
+
+Në simulim me të dhëna që imitojnë orarin e arit (3.7 vjet), v1.00 jep rreth 22 trade,
+pra afërsisht një në 2 muaj. v1.01 jep rreth 110 trade, pra afërsisht një në javë:
+- bias: CRT ditore, dhe kur nuk ka, qiriri ditor i kaluar;
+- premium/discount: mesi i range-it Asia;
+- engulf-i me high/low të ri tani llogaritet.
+
+Në fund të çdo testi, Journal shfaq dy rreshta (shembull nga simulimi):
+
+```
+CRT 1AM FUNNEL: CRT candles 975 | no data 1 | no bias 0 | high sweeps 686 | low sweeps 664 | OB breaks 1229 | trades 111
+CRT 1AM REJECTED: key time 448 | against bias 408 | OHLC 232 | premium/discount 30
+```
+
+Këta tregojnë sa qirinj 1AM u panë, sa sweep dhe sa OB break pati, si dhe cili filtër bllokoi
+sa sinjale. Nëse del "no data" i madh, mungon historia; nëse "key time" është i madh,
+kontrollo `InpNYOffset`.
+
 ## Testimi
 
 1. Kopjo `Experts/CRT_1AM_EA.mq5` te `MQL5/Experts/`, hape në MetaEditor, **F7**.
@@ -195,15 +219,16 @@ EA-ja i llogarit të gjitha oraret në kohën e New York-ut:
    - Date: **2023.01.01 – 2026.09.26**, Forward: **Custom 2025.07.01**
    - Modeling: **1 minute OHLC** (ose real ticks)
 3. Te **Inputs**: klik i djathtë → **Reset**. Mos ndrysho asgjë në provën e parë.
-4. Pas testit dërgo skedën **Backtest** dhe dy rreshtat `CRT 1AM SUMMARY` nga **Journal**.
+4. Pas testit dërgo skedën **Backtest** dhe rreshtat `CRT 1AM FUNNEL`, `CRT 1AM REJECTED`
+   dhe `CRT 1AM SUMMARY` nga **Journal**.
 
 Pastaj mund të krahasohen variantet me optimizim (Custom max):
-`InpBias` (3 vlera), `InpPremDisc`, `InpOHLC` (true/false), `InpRR` (2, 3),
-`InpTPMode` (2 vlera). Janë 48 kombinime.
+`InpBias` (4 vlera), `InpPremDisc` (3 vlera), `InpOHLC` (true/false), `InpRR` (2, 3).
+Janë 48 kombinime.
 
 ## Simulatori offline
 
 `backtest/crt_1am_backtest.py` përdor të njëjtat rregulla mbi qirinj M1.
-Te random walk (pa spread) mesatarja është rreth 0R (5 755 trade, −0.01R ± 0.016),
+Te random walk (pa spread) mesatarja është rreth 0R (5 867 trade, −0.005R ± 0.016),
 pra simulatori nuk krijon fitim ose humbje fallco. Për ta testuar me ar të vërtetë
 duhet eksport M1 nga MT5 (Ctrl+U → Bars → XAUUSD, M1 → Request → Export) në `data/`.
