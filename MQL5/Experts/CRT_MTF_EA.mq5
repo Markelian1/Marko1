@@ -40,7 +40,7 @@
 // Defaults are tuned for XAUUSD (prices in $).
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.21"
+#property version   "1.22"
 #property description "Multi-timeframe CRT engine (W1..M5). Enters on the 5M (or higher) CRT,"
 #property description "or optionally on a 1M sweep -> MSS -> FVG -> retest. Tuned for XAUUSD."
 
@@ -280,6 +280,29 @@ long        g_objSeq     = 0;
 string      g_lastSkip   = "-";
 int         g_tradeCrtId = -1;    // entry-CRT id of the last trade opened
 int         g_entryIdx   = IDX_M5; // engine that produces entries
+
+// Per-trade accounting: planned risk vs realised result, in R.
+struct TradeRisk
+{
+   ulong  posId;
+   double riskMoney;    // money lost if the stop fills exactly at its price
+   double commission;   // entry-side commission
+};
+
+TradeRisk g_risk[];
+int       g_stN      = 0;
+int       g_stWin    = 0;
+int       g_stSL     = 0;
+int       g_stTP     = 0;
+int       g_stOther  = 0;
+double    g_stWinR   = 0.0;
+double    g_stLossR  = 0.0;
+double    g_stWorstR = 0.0;
+double    g_stSLR    = 0.0;
+double    g_stTPR    = 0.0;
+double    g_stOtherR = 0.0;
+
+void SetPlannedRisk(ulong posId, double riskMoney);   // defined in TRADE ACCOUNTING
 
 
 // ============================================================================
@@ -1015,11 +1038,86 @@ void ExecuteSignal(int dir, double slRef, double crtTarget, int crtId, string ta
 
    g_lastSkip   = "-";
    g_tradeCrtId = crtId;
+
+   // Planned risk at the real fill price: every exit is later measured against it.
+   double fill = g_trade.ResultPrice() > 0.0 ? g_trade.ResultPrice() : entry;
+   double pnlAtSl = 0.0;
+   ENUM_ORDER_TYPE otype = dir == 1 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+   if(OrderCalcProfit(otype, _Symbol, lots, fill, sl, pnlAtSl) && pnlAtSl < 0.0)
+      SetPlannedRisk(g_trade.ResultOrder(), -pnlAtSl);
    string msg = StringFormat("%s %s %s lots | entry %s  SL %s  TP %s | RR %.2f | CRT #%d",
                              dir == 1 ? "BUY" : "SELL", tag, DoubleToString(lots, 2),
                              PriceText(entry), PriceText(sl), PriceText(tp), rr, crtId);
    Log(msg);
    Notify(_Symbol + " " + msg);
+}
+
+// ============================================================================
+// TRADE ACCOUNTING (realised R per trade)
+// ============================================================================
+
+int FindRisk(ulong posId)
+{
+   for(int i = ArraySize(g_risk) - 1; i >= 0; i--)
+      if(g_risk[i].posId == posId)
+         return i;
+   return -1;
+}
+
+int AddRisk(ulong posId)
+{
+   int n = ArraySize(g_risk);
+   ArrayResize(g_risk, n + 1, 16);
+   g_risk[n].posId      = posId;
+   g_risk[n].riskMoney  = 0.0;
+   g_risk[n].commission = 0.0;
+   return n;
+}
+
+void SetPlannedRisk(ulong posId, double riskMoney)
+{
+   int i = FindRisk(posId);
+   if(i < 0)
+      i = AddRisk(posId);
+   g_risk[i].riskMoney = riskMoney;
+}
+
+void RemoveRisk(int i)
+{
+   int n = ArraySize(g_risk);
+   for(int k = i; k < n - 1; k++)
+      g_risk[k] = g_risk[k + 1];
+   ArrayResize(g_risk, n - 1);
+}
+
+string DealReasonText(long reason)
+{
+   if(reason == DEAL_REASON_SL)
+      return "SL";
+   if(reason == DEAL_REASON_TP)
+      return "TP";
+   if(reason == DEAL_REASON_SO)
+      return "STOP OUT";
+   return "EA CLOSE";
+}
+
+void PrintTradeSummary()
+{
+   if(g_stN == 0)
+   {
+      Print("CRT SUMMARY: no closed trades");
+      return;
+   }
+   int losses = g_stN - g_stWin;
+   Print(StringFormat("CRT SUMMARY: %d trades | win %.1f%% | avg win %+.2fR | avg loss %+.2fR | worst %+.2fR | total %+.1fR",
+                      g_stN, 100.0 * g_stWin / g_stN,
+                      g_stWin > 0 ? g_stWinR / g_stWin : 0.0,
+                      losses > 0 ? g_stLossR / losses : 0.0,
+                      g_stWorstR, g_stWinR + g_stLossR));
+   Print(StringFormat("CRT SUMMARY by exit: SL %d x %+.2fR | TP %d x %+.2fR | EA close %d x %+.2fR   (an exact stop fill is -1.00R)",
+                      g_stSL, g_stSL > 0 ? g_stSLR / g_stSL : 0.0,
+                      g_stTP, g_stTP > 0 ? g_stTPR / g_stTP : 0.0,
+                      g_stOther, g_stOther > 0 ? g_stOtherR / g_stOther : 0.0));
 }
 
 void CloseOurPositions(string reason)
@@ -1619,7 +1717,7 @@ void UpdatePanel()
    if(!InpShowPanel || g_silent || g_noChart)
       return;
 
-   string s = "CRT MTF EA v1.21  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
+   string s = "CRT MTF EA v1.22  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
               "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  entry: " + TfName(InpEntryTF) + (InpEntryMode == ENTRY_MICRO_1M ? " CRT + 1M MICRO" : " CRT CLOSE");
 
@@ -1740,7 +1838,7 @@ int OnInit()
 
    // If history is not loaded yet, OnTick retries.
    // The tester keeps input values from earlier runs: print what is really used.
-   Log(StringFormat("CRT MTF EA v1.21 | entry %s %s | risk %.2f%% | max trades/day %s | session %s | "
+   Log(StringFormat("CRT MTF EA v1.22 | entry %s %s | risk %.2f%% | max trades/day %s | session %s | "
                     "min SL %.2f / %.1fx spread | min sweep %.0f%% | min RR %.2f | 50%% rule %s",
                     TfName(InpEntryTF), InpEntryMode == ENTRY_MICRO_1M ? "+1M micro" : "CRT close",
                     InpRiskPercent, InpMaxTradesDay > 0 ? IntegerToString(InpMaxTradesDay) : "NO LIMIT",
@@ -1755,8 +1853,78 @@ int OnInit()
    return INIT_SUCCEEDED;
 }
 
+void OnTradeTransaction(const MqlTradeTransaction &trans, const MqlTradeRequest &request, const MqlTradeResult &result)
+{
+   if(trans.type != TRADE_TRANSACTION_DEAL_ADD || trans.deal == 0)
+      return;
+   if(!HistoryDealSelect(trans.deal))
+      return;
+   if(HistoryDealGetString(trans.deal, DEAL_SYMBOL) != _Symbol)
+      return;
+   if((ulong)HistoryDealGetInteger(trans.deal, DEAL_MAGIC) != InpMagic)
+      return;
+
+   ulong posId    = (ulong)HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID);
+   long  dealType = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
+   int   i        = FindRisk(posId);
+
+   // Entry deal: keep its commission so the trade result includes both sides.
+   if(dealType == DEAL_ENTRY_IN)
+   {
+      if(i < 0)
+         i = AddRisk(posId);
+      g_risk[i].commission += HistoryDealGetDouble(trans.deal, DEAL_COMMISSION);
+      return;
+   }
+
+   if(dealType != DEAL_ENTRY_OUT && dealType != DEAL_ENTRY_OUT_BY)
+      return;
+   if(i < 0 || g_risk[i].riskMoney <= 0.0)
+      return;
+
+   double money = HistoryDealGetDouble(trans.deal, DEAL_PROFIT) +
+                  HistoryDealGetDouble(trans.deal, DEAL_COMMISSION) +
+                  HistoryDealGetDouble(trans.deal, DEAL_SWAP) +
+                  g_risk[i].commission;
+   double r      = money / g_risk[i].riskMoney;
+   long   reason = HistoryDealGetInteger(trans.deal, DEAL_REASON);
+   RemoveRisk(i);
+
+   g_stN++;
+   if(r > 0.0)
+   {
+      g_stWin++;
+      g_stWinR += r;
+   }
+   else
+      g_stLossR += r;
+   g_stWorstR = MathMin(g_stWorstR, r);
+
+   if(reason == DEAL_REASON_SL)
+   {
+      g_stSL++;
+      g_stSLR += r;
+   }
+   else if(reason == DEAL_REASON_TP)
+   {
+      g_stTP++;
+      g_stTPR += r;
+   }
+   else
+   {
+      g_stOther++;
+      g_stOtherR += r;
+   }
+
+   Log(StringFormat("CLOSE pos %s | %s | %s %s | %+.2fR",
+                    IntegerToString((long)posId), DealReasonText(reason),
+                    money >= 0.0 ? "+" : "-", DoubleToString(MathAbs(money), 2), r));
+}
+
 void OnDeinit(const int reason)
 {
+   PrintTradeSummary();
+
    if(g_csv != INVALID_HANDLE)
    {
       FileClose(g_csv);
