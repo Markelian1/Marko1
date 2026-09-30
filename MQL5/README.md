@@ -100,3 +100,35 @@ pavarësisht nga ideja e CRT-së.
 - Orari i sesionit është në kohën e serverit të brokerit, zakonisht GMT+2/+3.
 - Mbahet vetëm një pozicion njëherësh për çdo simbol dhe magic number.
 - Rezultatet e backtest-it nuk garantojnë fitim. Testoje fillimisht në llogari demo.
+
+## Optimizimi (v1.23): testi i organizuar
+
+Skedari `Presets/CRT_MTF_EA_optimize.set` përmban matricën e testit:
+
+| Parametri | Vlerat që testohen |
+|---|---|
+| `InpEntryTF` | M5, M15, M30, H1 |
+| `InpBiasMode` | Off, "Block against", "Same direction" |
+| `InpBiasTF` | H1, H4 (duhet të jetë mbi timeframe-in e hyrjes) |
+| `InpCloseOnInvalid` | true, false |
+| `InpBreakEvenR` | 0 (fikur), 1.0 |
+
+Janë 72 kombinime të vlefshme. Kombinimet e pavlefshme (M6, M10, H2 etj.)
+anashkalohen menjëherë.
+
+**Hapat:**
+1. Kopjo `CRT_MTF_EA_optimize.set` te `MQL5/Profiles/Tester/`.
+2. Strategy Tester → **Settings**:
+   - Expert: `CRT_MTF_EA`, Symbol: XAUUSD, Timeframe: M5
+   - Date: **2023.01.01 – 2026.09.26**
+   - **Forward: Custom, 2025.07.01**. Periudha para kësaj date përdoret për zgjedhjen,
+     ajo pas saj për vërtetim.
+   - Modeling: **1 minute OHLC**
+   - Optimization: **Slow complete algorithm**, kriteri: **Custom max**
+     (profit factor, vetëm për kombinimet me ≥ 100 trade)
+3. **Inputs** → klik i djathtë → **Load** → `CRT_MTF_EA_optimize.set`
+4. **Start**. Kur të mbarojë, dërgo skedat **Optimization Results** dhe **Forward Results**.
+
+**Si lexohet:** një kombinim ia vlen vetëm nëse ka **PF > 1.1 edhe në periudhën
+forward** dhe të paktën 100 trade. Një PF i mirë vetëm në periudhën e parë
+nuk mjafton: mund të jetë thjesht përshtatje me të kaluarën.

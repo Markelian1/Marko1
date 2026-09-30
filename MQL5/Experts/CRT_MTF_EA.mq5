@@ -40,7 +40,7 @@
 // Defaults are tuned for XAUUSD (prices in $).
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.22"
+#property version   "1.23"
 #property description "Multi-timeframe CRT engine (W1..M5). Enters on the 5M (or higher) CRT,"
 #property description "or optionally on a 1M sweep -> MSS -> FVG -> retest. Tuned for XAUUSD."
 
@@ -1717,7 +1717,7 @@ void UpdatePanel()
    if(!InpShowPanel || g_silent || g_noChart)
       return;
 
-   string s = "CRT MTF EA v1.22  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
+   string s = "CRT MTF EA v1.23  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
               "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  entry: " + TfName(InpEntryTF) + (InpEntryMode == ENTRY_MICRO_1M ? " CRT + 1M MICRO" : " CRT CLOSE");
 
@@ -1812,6 +1812,10 @@ int OnInit()
       Print("HTF bias timeframe must be higher than the entry timeframe");
       return INIT_PARAMETERS_INCORRECT;
    }
+   // In an optimization the bias timeframe does nothing while the bias is
+   // off: run that case once (with H1) instead of once per timeframe.
+   if(MQLInfoInteger(MQL_OPTIMIZATION) && InpBiasMode == BIAS_OFF && InpBiasTF != PERIOD_H1)
+      return INIT_PARAMETERS_INCORRECT;
 
    g_silent  = (bool)MQLInfoInteger(MQL_OPTIMIZATION);
    g_noChart = (bool)MQLInfoInteger(MQL_TESTER) && !(bool)MQLInfoInteger(MQL_VISUAL_MODE);
@@ -1838,7 +1842,7 @@ int OnInit()
 
    // If history is not loaded yet, OnTick retries.
    // The tester keeps input values from earlier runs: print what is really used.
-   Log(StringFormat("CRT MTF EA v1.22 | entry %s %s | risk %.2f%% | max trades/day %s | session %s | "
+   Log(StringFormat("CRT MTF EA v1.23 | entry %s %s | risk %.2f%% | max trades/day %s | session %s | "
                     "min SL %.2f / %.1fx spread | min sweep %.0f%% | min RR %.2f | 50%% rule %s",
                     TfName(InpEntryTF), InpEntryMode == ENTRY_MICRO_1M ? "+1M micro" : "CRT close",
                     InpRiskPercent, InpMaxTradesDay > 0 ? IntegerToString(InpMaxTradesDay) : "NO LIMIT",
@@ -1851,6 +1855,16 @@ int OnInit()
       UpdatePanel();
 
    return INIT_SUCCEEDED;
+}
+
+// Optimization criterion ("Custom max"): profit factor, but only for runs
+// with enough trades to mean something.
+double OnTester()
+{
+   double trades = TesterStatistics(STAT_TRADES);
+   if(trades < 100.0)
+      return 0.0;
+   return TesterStatistics(STAT_PROFIT_FACTOR);
 }
 
 void OnTradeTransaction(const MqlTradeTransaction &trans, const MqlTradeRequest &request, const MqlTradeResult &result)
