@@ -47,7 +47,7 @@
 // Defaults are tuned for XAUUSD (prices in $).
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.25"
+#property version   "1.26"
 #property description "Multi-timeframe CRT engine (W1..M5). Enters on the 5M (or higher) CRT,"
 #property description "or optionally on a 1M sweep -> MSS -> FVG -> retest. Tuned for XAUUSD."
 
@@ -98,20 +98,20 @@ enum ENUM_MID_RULE
 
 enum ENUM_ENTRY_MODE
 {
-   ENTRY_MICRO_1M  = 0, // 1M micro: sweep -> MSS -> FVG -> retest
-   ENTRY_CRT_CLOSE = 1  // CRT only (v8): market entry at CRT confirmation
+   ENTRY_MICRO_1M  = 0, // 1M micro: sweep -> MSS -> FVG -> retest (experimental)
+   ENTRY_CRT_CLOSE = 1  // CRT close: market entry when the CRT is confirmed
 };
 
 enum ENUM_SL_MODE
 {
-   SL_MICRO_SWEEP = 0, // Beyond the 1M sweep extreme
-   SL_CRT_SWEEP   = 1, // Beyond the 5M CRT sweep wick (C2)
-   SL_FVG         = 2  // Beyond the far edge of the 1M FVG
+   SL_MICRO_SWEEP = 0, // Beyond the 1M sweep extreme (1M micro mode only)
+   SL_CRT_SWEEP   = 1, // Beyond the CRT sweep wick (C2)
+   SL_FVG         = 2  // Beyond the far edge of the 1M FVG (1M micro mode only)
 };
 
 enum ENUM_TP_MODE
 {
-   TP_CRT_TARGET = 0, // 5M CRT target (other side of the parent range)
+   TP_CRT_TARGET = 0, // CRT target (other side of the parent range)
    TP_R_MULTIPLE = 1  // Fixed R multiple
 };
 
@@ -131,34 +131,42 @@ enum ENUM_BIAS_MODE
 
 // ============================================================================
 // INPUTS
+// Defaults = the configuration chosen by the 2023-2026 optimizations:
+// M15 CRT entries only in the direction of an active D1 CRT.
 // ============================================================================
 
-input group "TRADING"
-input bool            InpTradeEnabled  = true;           // Place trades (false = signals only)
-input ENUM_ENTRY_MODE InpEntryMode     = ENTRY_CRT_CLOSE; // Entry mode
-input ENUM_TIMEFRAMES InpEntryTF       = PERIOD_M15;     // CRT entry timeframe (M5/M15/M30/H1/H4)
-input bool            InpCloseOnInvalid = true;          // Close the trade when its entry CRT is invalidated
-input ulong           InpMagic         = 550100;         // Magic number
-input ENUM_RISK_MODE  InpRiskMode      = RISK_PERCENT;   // Position sizing
-input double          InpRiskPercent   = 0.5;            // Risk per trade (% of balance)
-input double          InpFixedLots     = 0.01;           // Fixed lots
-input double          InpMaxLots       = 5.0;            // Max lots per trade (safety cap)
-input ENUM_SL_MODE    InpSLMode        = SL_MICRO_SWEEP; // Stop loss placement (1M mode; 5M mode uses the C2 wick)
-input double          InpSLBuffer      = 0.30;           // SL buffer (price units, XAUUSD = $)
-input ENUM_TP_MODE    InpTPMode        = TP_CRT_TARGET;  // Take profit
-input double          InpRMultiple     = 2.0;            // R multiple (when TP = R multiple)
-input double          InpMinRR         = 1.0;            // Min reward:risk to take a trade (0 = off)
-input double          InpBreakEvenR    = 0.0;            // Move SL to entry at +R (0 = off)
-input int             InpMaxTradesDay  = 3;              // Max trades per day (0 = no limit)
-input double          InpMaxSpread     = 0.50;           // Max spread (price units, 0 = off)
-input int             InpSlippagePts   = 30;             // Max slippage (points)
+input group "1. STRATEGY"
+input bool            InpTradeEnabled   = true;            // Place trades (false = signals only)
+input ENUM_ENTRY_MODE InpEntryMode      = ENTRY_CRT_CLOSE; // Entry mode
+input ENUM_TIMEFRAMES InpEntryTF        = PERIOD_M15;      // CRT entry timeframe (M5/M15/M30/H1/H4)
+input ENUM_BIAS_MODE  InpBiasMode       = BIAS_SAME_DIR;   // HTF bias filter
+input ENUM_TIMEFRAMES InpBiasTF         = PERIOD_D1;       // HTF bias timeframe (must be above the entry TF)
 
-input group "QUALITY / COST FILTERS"
+input group "2. RISK"
+input ENUM_RISK_MODE  InpRiskMode       = RISK_PERCENT;    // Position sizing
+input double          InpRiskPercent    = 0.5;             // Risk per trade (% of balance)
+input double          InpFixedLots      = 0.01;            // Fixed lots (when sizing = fixed lots)
+input double          InpMaxLots        = 5.0;             // Max lots per trade (safety cap)
+input int             InpMaxTradesDay   = 3;               // Max trades per day (0 = no limit)
+input ulong           InpMagic          = 550100;          // Magic number
+
+input group "3. STOP / TARGET"
+input ENUM_SL_MODE    InpSLMode         = SL_CRT_SWEEP;    // Stop loss placement
+input double          InpSLBuffer       = 0.30;            // SL buffer beyond the wick (price units, XAUUSD = $)
+input ENUM_TP_MODE    InpTPMode         = TP_CRT_TARGET;   // Take profit
+input double          InpRMultiple      = 2.0;             // R multiple (only when TP = fixed R multiple)
+input double          InpMinRR          = 1.0;             // Min reward:risk to take a trade (0 = off)
+input double          InpBreakEvenR     = 0.0;             // Move SL to entry at +R (0 = off)
+input bool            InpCloseOnInvalid = true;            // Close the trade when its CRT is invalidated
+
+input group "4. QUALITY / COST FILTERS"
 input double InpMinSL         = 1.00;  // Min SL distance (price units, XAUUSD = $, 0 = off)
 input double InpMinSLSpreadX  = 4.0;   // Min SL distance as a multiple of the spread (0 = off)
 input double InpMinSweepPct   = 10.0;  // Min sweep beyond the parent range (% of range, 0 = off)
+input double InpMaxSpread     = 0.50;  // Max spread to open a trade (price units, 0 = off)
+input int    InpSlippagePts   = 30;    // Max slippage (points)
 
-input group "SESSION (server time)"
+input group "5. SESSION (broker server time)"
 input bool InpUseSession     = true;  // Only enter inside the session
 input int  InpSessStartHour  = 10;    // Session start hour
 input int  InpSessStartMin   = 0;     // Session start minute
@@ -166,32 +174,28 @@ input int  InpSessEndHour    = 20;    // Session end hour
 input int  InpSessEndMin     = 0;     // Session end minute
 input bool InpCloseOutside   = false; // Close positions outside the session
 
-input group "HTF BIAS"
-input ENUM_BIAS_MODE  InpBiasMode = BIAS_SAME_DIR; // HTF bias filter
-input ENUM_TIMEFRAMES InpBiasTF   = PERIOD_D1;     // HTF bias timeframe (W1/D1/H4/H1/M30/M15)
-
-input group "CRT ENGINE"
+input group "6. CRT ENGINE (advanced)"
 input ENUM_MID_RULE InpMidRule    = MID_TOWARD_TARGET; // 50% midpoint rule
 input int           InpWarmupBars = 300;               // Warm-up bars per timeframe
 
-input group "1M MICRO ENGINE"
+input group "7. 1M MICRO ENGINE (only for entry mode = 1M micro)"
 input int  InpSweepLookback   = 3;    // Liquidity sweep lookback (1M bars)
 input int  InpMssLookback     = 3;    // MSS lookback (1M bars)
-input int  InpMicroMaxBars    = 15;   // Max 1M bars after the 5M CRT
+input int  InpMicroMaxBars    = 15;   // Max 1M bars after the CRT
 input int  InpMinFvgTicks     = 1;    // Min FVG size (ticks)
 input bool InpCancelOnFvgFail = true; // Cancel when a 1M bar closes through the FVG
 
-input group "DISPLAY / LOG"
+input group "8. DISPLAY / ALERTS"
 input bool InpShowPanel   = true;  // Show MTF panel + ledger (chart comment)
 input int  InpLedgerMax   = 100;   // Max ledger events kept
 input int  InpLedgerRows  = 10;    // Visible ledger rows
-input bool InpDraw        = true;  // Draw 5M CRT levels and 1M events
-input bool InpVerbose     = true;  // Print 1M micro events to the journal
+input bool InpDraw        = true;  // Draw CRT levels and events on the chart
+input bool InpVerbose     = false; // Print 1M micro events to the journal
 input bool InpLedgerCSV   = false; // Write the ledger to MQL5/Files/CRT_ledger_<symbol>.csv
-input bool InpAlertPopup  = false; // Popup alerts
-input bool InpAlertPush   = false; // Push notifications
+input bool InpAlertPopup  = false; // Popup alert on every new trade
+input bool InpAlertPush   = false; // Push notification (phone) on every new trade
 
-input group "OPTIMIZATION"
+input group "9. OPTIMIZATION"
 input int  InpOptMinTrades = 30;   // Min trades for the "Custom max" score (fewer = score 0)
 
 
@@ -1727,7 +1731,7 @@ void UpdatePanel()
    if(!InpShowPanel || g_silent || g_noChart)
       return;
 
-   string s = "CRT MTF EA v1.25  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
+   string s = "CRT MTF EA v1.26  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
               "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  entry: " + TfName(InpEntryTF) + (InpEntryMode == ENTRY_MICRO_1M ? " CRT + 1M MICRO" : " CRT CLOSE");
 
@@ -1852,7 +1856,7 @@ int OnInit()
 
    // If history is not loaded yet, OnTick retries.
    // The tester keeps input values from earlier runs: print what is really used.
-   Log(StringFormat("CRT MTF EA v1.25 | entry %s %s | risk %.2f%% | max trades/day %s | session %s | "
+   Log(StringFormat("CRT MTF EA v1.26 | entry %s %s | risk %.2f%% | max trades/day %s | session %s | "
                     "min SL %.2f / %.1fx spread | min sweep %.0f%% | min RR %.2f | 50%% rule %s",
                     TfName(InpEntryTF), InpEntryMode == ENTRY_MICRO_1M ? "+1M micro" : "CRT close",
                     InpRiskPercent, InpMaxTradesDay > 0 ? IntegerToString(InpMaxTradesDay) : "NO LIMIT",

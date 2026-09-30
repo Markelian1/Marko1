@@ -4,7 +4,7 @@ Expert Advisor për MetaTrader 5, i ndërtuar nga indikatorët TradingView
 "CRT MTF EVENT ENGINE v8 - 5M FINAL - NO 1M" dhe "v5 + v6 1M MICRO ENGINE".
 Vlerat fillestare janë zgjedhur për **XAUUSD**.
 
-Skedari: `Experts/CRT_MTF_EA.mq5` (v1.20)
+Skedari: `Experts/CRT_MTF_EA.mq5` (v1.26)
 
 ## Pse v1.10 humbi rreth 48% në 5 javë (XAUUSD M5, 2023)
 
@@ -67,31 +67,31 @@ pavarësisht nga ideja e CRT-së.
 - Visual mode: shfaq nivelet 5M, eventet 1M dhe panelin.
 - Për krahasim, testo si `ENTRY_CRT_CLOSE` (v8) ashtu edhe `ENTRY_MICRO_1M`.
 
-## Parametrat kryesorë
+## Parametrat (v1.26, vlerat fillestare)
 
-| Parametri | Vlera fillestare | Shpjegim |
-|---|---|---|
-| `InpTradeEnabled` | true | false = vetëm sinjale/alarme, pa trade |
-| `InpEntryMode` | 5M CRT close (v8) | ose 1M micro |
-| `InpEntryTF` | M5 | timeframe-i i CRT-së që jep hyrje: M5, M15, M30, H1, H4 |
-| `InpMinSL` | 1.00 | stop-i minimal në $; setup-et me stop më të vogël anashkalohen |
-| `InpMinSLSpreadX` | 4.0 | stop-i duhet të jetë ≥ 4 × spread-i (spread-i ≤ 25% e rrezikut) |
-| `InpMinSweepPct` | 10 | sweep-i duhet të dalë ≥ 10% e range-it jashtë parent-it |
-| `InpCloseOnInvalid` | true | mbyll trade-in kur CRT-ja 5M e tij invalidohet |
-| `InpRiskPercent` | 0.5 | % e balancës që humbet nëse preket SL-ja |
-| `InpSLMode` | 1M sweep | vetëm për 1M: sweep 1M, wick-u C2, ose FVG. Në 5M SL-ja është gjithmonë te wick-u C2 |
-| `InpSLBuffer` | 0.30 | distanca shtesë e SL-së, në $ për XAUUSD |
-| `InpTPMode` | CRT target | ose R fiks (`InpRMultiple`) |
-| `InpMinRR` | 1.0 | trade-t me reward:risk më të vogël anashkalohen |
-| `InpBreakEvenR` | 0 (fikur) | kalon SL-në te hyrja pas +R |
-| `InpMaxTradesDay` | 3 | numri maksimal i trade-ve në ditë |
-| `InpMaxSpread` | 0.50 | spread maksimal në $ |
-| `InpUseSession` | true, 10:00–20:00 | orari është në **orën e serverit** të brokerit (Londër + New York) |
-| `InpBiasMode` | off | filtër sipas CRT-së në një timeframe më të lartë |
-| `InpMidRule` | toward target | rregulli 50%: drejt target-it, v5, ose i fikur |
-| `InpSweepLookback` / `InpMssLookback` | 3 / 3 | numri i qirinjve 1M |
-| `InpMicroMaxBars` | 15 | sa qirinj 1M pret pas CRT-së |
-| `InpLedgerCSV` | false | ruan ledger-in te `MQL5/Files/CRT_ledger_<symbol>.csv` |
+Vlerat fillestare janë konfigurimi i zgjedhur nga optimizimet 2023–2026.
+Kur e vendos EA-në në grafik (ose shtyp **Reset** te Inputs), nuk ke nevojë të ndryshosh asgjë.
+
+| Grupi | Parametri | Vlera | Çfarë bën |
+|---|---|---|---|
+| 1. STRATEGY | Entry mode | CRT close | hyn kur konfirmohet CRT-ja |
+| | CRT entry timeframe | **15 Minutes** | CRT-ja që jep hyrjen |
+| | HTF bias filter | **Require an active HTF CRT in the same direction** | hyn vetëm në drejtimin e CRT-së së HTF-së |
+| | HTF bias timeframe | **1 Day** | CRT-ja ditore jep drejtimin |
+| 2. RISK | Risk per trade | 0.5% | humbja nëse preket SL-ja |
+| | Max lots | 5.0 | kufi sigurie |
+| | Max trades per day | 3 | |
+| 3. STOP / TARGET | Stop loss placement | CRT sweep wick (C2) | SL përtej wick-ut + 0.30 $ |
+| | Take profit | CRT target | ana tjetër e parent range |
+| | Min reward:risk | 1.0 | trade-t me RR < 1 anashkalohen |
+| | Move SL to entry at +R | 0 (fikur) | break-even-i doli më keq në optimizim |
+| | Close when CRT invalidated | true | del kur CRT-ja prishet |
+| 4. FILTERS | Min SL | 1.00 $ | stop-et shumë të vegjël anashkalohen |
+| | Min SL × spread | 4 | spread-i ≤ 25% e rrezikut |
+| | Min sweep | 10% e range-it | sweep-et prej disa centësh anashkalohen |
+| | Max spread | 0.50 $ | |
+| 5. SESSION | Session | 10:00–20:00 (ora e serverit) | Londër + New York |
+| 6–9 | Motori, 1M micro, paneli, optimizimi | – | nuk kanë nevojë për ndryshim |
 
 ## Kufizimet
 
