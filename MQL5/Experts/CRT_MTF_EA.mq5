@@ -15,6 +15,13 @@
 //   v8 (default): MARKET ENTRY at the 5M CRT close
 //                 SL beyond the C2 sweep wick, TP at the 5M CRT target
 //   optional:     1M SWEEP -> 1M MSS -> 1M FVG -> 1M FVG RETEST -> ENTRY
+//   The entry CRT timeframe is an input (M5 default, up to H4).
+//
+// v1.20 COST / QUALITY FILTERS (the v1.10 5M test lost ~48% in 5 weeks:
+// stops of $0.3-$1 on gold paid most of the risk to the spread)
+//   - min SL distance, absolute and as a multiple of the spread
+//   - min sweep depth beyond the parent range (% of the range)
+//   - session filter on by default (10:00-20:00 server time)
 //
 // FIXES VS THE PINE VERSION
 //   - 50% rule: by default the entry retires once price has already
@@ -33,8 +40,8 @@
 // Defaults are tuned for XAUUSD (prices in $).
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.10"
-#property description "Multi-timeframe CRT engine (W1..M5). Enters on the 5M CRT (v8),"
+#property version   "1.20"
+#property description "Multi-timeframe CRT engine (W1..M5). Enters on the 5M (or higher) CRT,"
 #property description "or optionally on a 1M sweep -> MSS -> FVG -> retest. Tuned for XAUUSD."
 
 #include <Trade/Trade.mqh>
@@ -85,7 +92,7 @@ enum ENUM_MID_RULE
 enum ENUM_ENTRY_MODE
 {
    ENTRY_MICRO_1M  = 0, // 1M micro: sweep -> MSS -> FVG -> retest
-   ENTRY_CRT_CLOSE = 1  // 5M only (v8): market entry at 5M CRT confirmation
+   ENTRY_CRT_CLOSE = 1  // CRT only (v8): market entry at CRT confirmation
 };
 
 enum ENUM_SL_MODE
@@ -122,7 +129,8 @@ enum ENUM_BIAS_MODE
 input group "TRADING"
 input bool            InpTradeEnabled  = true;           // Place trades (false = signals only)
 input ENUM_ENTRY_MODE InpEntryMode     = ENTRY_CRT_CLOSE; // Entry mode
-input bool            InpCloseOnInvalid = true;          // Close the trade when its 5M CRT is invalidated
+input ENUM_TIMEFRAMES InpEntryTF       = PERIOD_M5;      // CRT entry timeframe (M5/M15/M30/H1/H4)
+input bool            InpCloseOnInvalid = true;          // Close the trade when its entry CRT is invalidated
 input ulong           InpMagic         = 550100;         // Magic number
 input ENUM_RISK_MODE  InpRiskMode      = RISK_PERCENT;   // Position sizing
 input double          InpRiskPercent   = 0.5;            // Risk per trade (% of balance)
@@ -138,9 +146,14 @@ input int             InpMaxTradesDay  = 3;              // Max trades per day (
 input double          InpMaxSpread     = 0.50;           // Max spread (price units, 0 = off)
 input int             InpSlippagePts   = 30;             // Max slippage (points)
 
+input group "QUALITY / COST FILTERS"
+input double InpMinSL         = 1.00;  // Min SL distance (price units, XAUUSD = $, 0 = off)
+input double InpMinSLSpreadX  = 4.0;   // Min SL distance as a multiple of the spread (0 = off)
+input double InpMinSweepPct   = 10.0;  // Min sweep beyond the parent range (% of range, 0 = off)
+
 input group "SESSION (server time)"
-input bool InpUseSession     = false; // Only enter inside the session
-input int  InpSessStartHour  = 9;     // Session start hour
+input bool InpUseSession     = true;  // Only enter inside the session
+input int  InpSessStartHour  = 10;    // Session start hour
 input int  InpSessStartMin   = 0;     // Session start minute
 input int  InpSessEndHour    = 20;    // Session end hour
 input int  InpSessEndMin     = 0;     // Session end minute
@@ -265,7 +278,8 @@ int         g_csv        = INVALID_HANDLE;
 int         g_drawnCrtId = -1;
 long        g_objSeq     = 0;
 string      g_lastSkip   = "-";
-int         g_tradeCrtId = -1;    // 5M CRT id of the last trade opened
+int         g_tradeCrtId = -1;    // entry-CRT id of the last trade opened
+int         g_entryIdx   = IDX_M5; // engine that produces entries
 
 
 // ============================================================================
@@ -743,8 +757,8 @@ void ExtendActiveDrawings()
    if(!DrawingOn() || g_drawnCrtId < 0)
       return;
 
-   if(g_eng[IDX_M5].state != 0 && g_eng[IDX_M5].id == g_drawnCrtId)
-      DrawCrtLevels(g_eng[IDX_M5], TimeCurrent());
+   if(g_eng[g_entryIdx].state != 0 && g_eng[g_entryIdx].id == g_drawnCrtId)
+      DrawCrtLevels(g_eng[g_entryIdx], TimeCurrent());
    else
       g_drawnCrtId = -1;
 }
@@ -940,6 +954,15 @@ void ExecuteSignal(int dir, double slRef, double crtTarget, int crtId, string ta
    if(risk <= 0.0)
    {
       Skip("SL ON THE WRONG SIDE OF PRICE");
+      return;
+   }
+
+   // A stop only a few spreads wide pays most of the risk to the spread:
+   // skip setups whose stop is too small for the costs.
+   double minRisk = MathMax(InpMinSL, InpMinSLSpreadX * (ask - bid));
+   if(risk < minRisk)
+   {
+      Skip(StringFormat("SL %s < MIN %s", DoubleToString(risk, _Digits), DoubleToString(minRisk, _Digits)));
       return;
    }
 
@@ -1364,6 +1387,20 @@ void MicroStep(const MqlRates &b, bool latest)
 // ENGINE EVENTS
 // ============================================================================
 
+// Sweep depth beyond the parent range, as a share of the range.
+bool SweepDeepEnough(const CRTEngine &e)
+{
+   if(InpMinSweepPct <= 0.0)
+      return true;
+
+   double range = e.ph - e.pl;
+   if(range <= 0.0)
+      return false;
+
+   double depth = e.state == 1 ? e.pl - e.sweepExtreme : e.sweepExtreme - e.ph;
+   return depth >= range * InpMinSweepPct / 100.0;
+}
+
 void OnEngineEvent(int k, int ev, const LedgerEvent &le, const MqlRates &bar, bool latest)
 {
    AddLedger(le);
@@ -1372,8 +1409,10 @@ void OnEngineEvent(int k, int ev, const LedgerEvent &le, const MqlRates &bar, bo
 
    WriteCsv(le);
 
-   if(k != IDX_M5)
+   if(k != g_entryIdx)
       return;
+
+   string tfTxt = TfName(g_eng[k].tf);
 
    switch(ev)
    {
@@ -1381,15 +1420,22 @@ void OnEngineEvent(int k, int ev, const LedgerEvent &le, const MqlRates &bar, bo
       case EV_BEAR:
       {
          int d = ev == EV_BULL ? 1 : 2;
-         DrawLabel(bar.time, d == 1 ? bar.low : bar.high, "5M " + EventText(ev), d == 1 ? clrLime : clrRed, d == 2);
+         DrawLabel(bar.time, d == 1 ? bar.low : bar.high, tfTxt + " " + EventText(ev), d == 1 ? clrLime : clrRed, d == 2);
          g_drawnCrtId = g_eng[k].id;
          DrawCrtLevels(g_eng[k], le.evTime);
-         Notify(StringFormat("%s 5M %s confirmed | target %s", _Symbol, EventText(ev), PriceText(le.target)));
+         Notify(StringFormat("%s %s %s confirmed | target %s", _Symbol, tfTxt, EventText(ev), PriceText(le.target)));
+
+         // A sweep of a few cents is noise, not a liquidity grab.
+         if(!SweepDeepEnough(g_eng[k]))
+         {
+            Skip(StringFormat("SHALLOW SWEEP (CRT #%d)", g_eng[k].id));
+            break;
+         }
 
          if(InpEntryMode == ENTRY_MICRO_1M)
             ArmMicro(g_eng[k]);
          else if(latest)
-            ExecuteSignal(d, g_eng[k].sweepExtreme, g_eng[k].target, g_eng[k].id, "5M");
+            ExecuteSignal(d, g_eng[k].sweepExtreme, g_eng[k].target, g_eng[k].id, tfTxt);
          else
             Skip("STALE SIGNAL (catch-up bar)");
          break;
@@ -1400,14 +1446,14 @@ void OnEngineEvent(int k, int ev, const LedgerEvent &le, const MqlRates &bar, bo
       case EV_MID:
       {
          color c = ev == EV_TARGET ? clrDodgerBlue : ev == EV_INVALID ? clrOrange : clrSilver;
-         DrawLabel(bar.time, le.dir == 1 ? bar.high : bar.low, "5M " + EventText(ev), c, le.dir == 1);
+         DrawLabel(bar.time, le.dir == 1 ? bar.high : bar.low, tfTxt + " " + EventText(ev), c, le.dir == 1);
 
          if(le.id == g_micro.crtId)
-            CancelMicro("5M " + EventText(ev), le.evTime);
+            CancelMicro(tfTxt + " " + EventText(ev), le.evTime);
 
          // The setup behind the open trade is dead: get out at market.
          if(ev == EV_INVALID && InpCloseOnInvalid && le.id == g_tradeCrtId)
-            CloseOurPositions(StringFormat("5M CRT #%d INVALIDATED", le.id));
+            CloseOurPositions(StringFormat("%s CRT #%d INVALIDATED", tfTxt, le.id));
 
          if(ev != EV_MID && le.id == g_drawnCrtId)
          {
@@ -1558,8 +1604,8 @@ bool InitEngines()
    ResetMicro();
    g_lastM1Open = iTime(_Symbol, PERIOD_M1, 0);
 
-   Log(StringFormat("CRT MTF EA ready on %s | %d warm-up events | 5M engine: %s",
-                    _Symbol, ArraySize(g_ledger), StateText(g_eng[IDX_M5].state)));
+   Log(StringFormat("CRT MTF EA ready on %s | %d warm-up events | entry engine: %s",
+                    _Symbol, ArraySize(g_ledger), StateText(g_eng[g_entryIdx].state)));
    return true;
 }
 
@@ -1573,9 +1619,9 @@ void UpdatePanel()
    if(!InpShowPanel || g_silent || g_noChart)
       return;
 
-   string s = "CRT MTF EA v1.10  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
+   string s = "CRT MTF EA v1.20  |  " + _Symbol + "  |  magic " + IntegerToString((long)InpMagic) +
               "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
-              "  |  entry: " + (InpEntryMode == ENTRY_MICRO_1M ? "1M MICRO" : "5M CRT CLOSE");
+              "  |  entry: " + TfName(InpEntryTF) + (InpEntryMode == ENTRY_MICRO_1M ? " CRT + 1M MICRO" : " CRT CLOSE");
 
    s += "\n\nTF      ID       CRT             LAST EVENT       ENTRY        TARGET        50%";
    for(int i = 0; i < ENG_COUNT; i++)
@@ -1649,11 +1695,21 @@ int OnInit()
       for(int i = 0; i < ENG_COUNT; i++)
          if(g_tfs[i] == InpBiasTF)
             g_biasIdx = i;
-      if(g_biasIdx < 0 || g_biasIdx == IDX_M5)
-      {
-         Print("HTF bias timeframe must be W1, D1, H4, H1, M30 or M15");
-         return INIT_PARAMETERS_INCORRECT;
-      }
+   }
+
+   g_entryIdx = -1;
+   for(int i = 2; i < ENG_COUNT; i++)
+      if(g_tfs[i] == InpEntryTF)
+         g_entryIdx = i;
+   if(g_entryIdx < 0)
+   {
+      Print("Entry timeframe must be H4, H1, M30, M15 or M5");
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   if(InpBiasMode != BIAS_OFF && (g_biasIdx < 0 || g_biasIdx >= g_entryIdx))
+   {
+      Print("HTF bias timeframe must be higher than the entry timeframe");
+      return INIT_PARAMETERS_INCORRECT;
    }
 
    g_silent  = (bool)MQLInfoInteger(MQL_OPTIMIZATION);

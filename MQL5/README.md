@@ -4,7 +4,22 @@ Expert Advisor për MetaTrader 5, i ndërtuar nga indikatorët TradingView
 "CRT MTF EVENT ENGINE v8 - 5M FINAL - NO 1M" dhe "v5 + v6 1M MICRO ENGINE".
 Vlerat fillestare janë zgjedhur për **XAUUSD**.
 
-Skedari: `Experts/CRT_MTF_EA.mq5` (v1.10)
+Skedari: `Experts/CRT_MTF_EA.mq5` (v1.20)
+
+## Pse v1.10 humbi rreth 48% në 5 javë (XAUUSD M5, 2023)
+
+Nga journal-i i testit:
+
+- Stop-et ishin shumë të vogla: $0.32–$1.09. Spread-i ishte $0.18–$0.26,
+  pra **20–50% e rrezikut të çdo trade-i shkonte te spread-i**.
+- Me rrezik 0.5% dhe stop kaq të ngushtë, lotet dilnin 2.8–5.
+- Shumë "sweep" ishin vetëm disa cent mbi/nën parent range, pra zhurmë
+  dhe jo marrje likuiditeti.
+- Pa limit ditor (14+ trade në ditë) dhe me trade edhe në 22:00–23:30
+  (rollover, spread i gjerë), kostoja shumëfishohej.
+
+Me këto kosto, një stop dhe target kaq afër janë matematikisht humbës,
+pavarësisht nga ideja e CRT-së.
 
 ## Si funksionon
 
@@ -58,6 +73,10 @@ Skedari: `Experts/CRT_MTF_EA.mq5` (v1.10)
 |---|---|---|
 | `InpTradeEnabled` | true | false = vetëm sinjale/alarme, pa trade |
 | `InpEntryMode` | 5M CRT close (v8) | ose 1M micro |
+| `InpEntryTF` | M5 | timeframe-i i CRT-së që jep hyrje: M5, M15, M30, H1, H4 |
+| `InpMinSL` | 1.00 | stop-i minimal në $; setup-et me stop më të vogël anashkalohen |
+| `InpMinSLSpreadX` | 4.0 | stop-i duhet të jetë ≥ 4 × spread-i (spread-i ≤ 25% e rrezikut) |
+| `InpMinSweepPct` | 10 | sweep-i duhet të dalë ≥ 10% e range-it jashtë parent-it |
 | `InpCloseOnInvalid` | true | mbyll trade-in kur CRT-ja 5M e tij invalidohet |
 | `InpRiskPercent` | 0.5 | % e balancës që humbet nëse preket SL-ja |
 | `InpSLMode` | 1M sweep | vetëm për 1M: sweep 1M, wick-u C2, ose FVG. Në 5M SL-ja është gjithmonë te wick-u C2 |
@@ -67,7 +86,7 @@ Skedari: `Experts/CRT_MTF_EA.mq5` (v1.10)
 | `InpBreakEvenR` | 0 (fikur) | kalon SL-në te hyrja pas +R |
 | `InpMaxTradesDay` | 3 | numri maksimal i trade-ve në ditë |
 | `InpMaxSpread` | 0.50 | spread maksimal në $ |
-| `InpUseSession` | false | orari është në **orën e serverit** të brokerit |
+| `InpUseSession` | true, 10:00–20:00 | orari është në **orën e serverit** të brokerit (Londër + New York) |
 | `InpBiasMode` | off | filtër sipas CRT-së në një timeframe më të lartë |
 | `InpMidRule` | toward target | rregulli 50%: drejt target-it, v5, ose i fikur |
 | `InpSweepLookback` / `InpMssLookback` | 3 / 3 | numri i qirinjve 1M |
