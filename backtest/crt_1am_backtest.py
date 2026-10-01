@@ -56,13 +56,14 @@ ANYTIME = dict(ACTIVE, skip_hours=(), models={n: None for n in MODELS})
 PRO24 = dict(ANYTIME, entry="retest", retest_sec=4 * 3600)
 
 
-def pro24_set(per_candle=True, reentry=True, selective=False, skip_asia=True):
-    """CRT_1AM_PRO24 v1.07 as a list of independent runs: one position per
-    H4 candle (each candle its own run), re-entry, no retest against the
-    trend, no 9PM (Asia) candle, optionally the Selective model (off by
-    default: it trades fixed key times). The v1.05 daily loss limit is not
-    simulated."""
-    base = dict(PRO24, reentry=reentry, bias_first=True)
+def pro24_set(per_candle=True, reentry=True, selective=False, skip_asia=False, min_range_vol=0.7):
+    """CRT_1AM_PRO24 v1.10 (H4 part) as a list of independent runs: one
+    position per H4 candle (each candle its own run), re-entry, no retest
+    against the trend, the range-volume filter (needs cfg["vol"], the tick
+    volumes of the bars; without them it is off), optionally the old 9PM
+    clock rule and the Selective model. The daily loss limit and the max
+    drawdown stop are not simulated."""
+    base = dict(PRO24, reentry=reentry, bias_first=True, min_range_vol=min_range_vol)
     names = [n for n in MODELS if not (skip_asia and n == "9PM")]
     if not per_candle:
         base["models"] = {n: None for n in names}
@@ -88,6 +89,7 @@ class ModelDay:
         self.sweep_hi = self.sweep_lo = 0.0
         self.ob_sell_low = self.ob_buy_high = 0.0
         self.ob_sell_t = self.ob_buy_t = 0
+        self.range_vol = 1.0
 
 
 def run(bars, cfg):
@@ -111,6 +113,7 @@ def run(bars, cfg):
     tfvol = defaultdict(float)
     for t0, v in cfg.get("vol", {}).items():
         tfvol[t0 - t0 % M15] += v
+    tfvol = dict(tfvol)
     vol_hist = []                    # tick volumes of the last vol_days of closed entry-TF bars
     d1_index = {d: i for i, d in enumerate(d1_days)}
 
@@ -159,6 +162,14 @@ def run(bars, cfg):
                 sma_dir = 0
         rngs = [d1[x][2] - d1[x][3] for x in d1_days[max(0, i - 14):i]]
         d.atr = sum(rngs) / len(rngs)
+        if cfg.get("min_range_vol") and tfvol:
+            # liquidity of the range: its tick volume per H4 candle vs the average H4 candle of the last 5 days
+            rv = sum(tfvol.get(k, 0.0) for k in range(crt_srv - n_rng * CANDLE, crt_srv, M15)) / n_rng
+            av = sum(tfvol.get(k, 0.0) for k in range(crt_srv - 5 * DAY, crt_srv, M15)) / (5 * DAY / CANDLE)
+            d.range_vol = rv / av if av > 0 else 1.0
+            if d.range_vol < cfg["min_range_vol"]:
+                funnel["quiet range"] += 1
+                return d
         if cfg["bias"] == "none":
             d.allow = 3
         elif cfg["bias"] == "d1":
@@ -227,7 +238,7 @@ def run(bars, cfg):
             if reward <= 0 or reward / risk < cfg["min_rr"]:
                 return "RR"
         entries_day[day_ny] += 1
-        return dict(dir=direction, entry=entry, sl=sl, tp=tp, risk=risk, t_in=t, model=name,
+        return dict(dir=direction, entry=entry, sl=sl, tp=tp, risk=risk, t_in=t, model=name, key=d.key,
                     rng=d.rng_hi - d.rng_lo, rng_hi=d.rng_hi, rng_lo=d.rng_lo, crt_open=d.crt_open, pd_mid=d.pd_mid,
                     extreme=extreme, depth=(extreme - d.rng_hi) if direction == 2 else (d.rng_lo - extreme),
                     atr=d.atr, spread=spread, prev_close=d.prev_close, trend_avg=d.trend_avg,
@@ -257,7 +268,7 @@ def run(bars, cfg):
             spike = cfg.get("spike", 0) > 0 and avg_rng > 0 and closed[2] - closed[3] > cfg["spike"] * avg_rng
             recent.append(closed[2] - closed[3])
             if cfg.get("vol"):
-                vol_hist.append(tfvol[closed[0]])
+                vol_hist.append(tfvol.get(closed[0], 0.0))
                 if len(vol_hist) > cfg.get("vol_days", 5) * DAY // M15:
                     vol_hist.pop(0)
             if len(recent) > 20:
@@ -288,8 +299,8 @@ def run(bars, cfg):
                         n_hist = len(vol_hist)
                         avg_v = sum(vol_hist) / n_hist if n_hist else 0.0
                         ob_t = d.ob_sell_t if direction == 2 else d.ob_buy_t
-                        if avg_v > 0 and ((cfg.get("min_vol") and tfvol[closed[0]] < cfg["min_vol"] * avg_v) or
-                                          (cfg.get("min_sweep_vol") and tfvol[ob_t] < cfg["min_sweep_vol"] * avg_v)):
+                        if avg_v > 0 and ((cfg.get("min_vol") and tfvol.get(closed[0], 0.0) < cfg["min_vol"] * avg_v) or
+                                          (cfg.get("min_sweep_vol") and tfvol.get(ob_t, 0.0) < cfg["min_sweep_vol"] * avg_v)):
                             skips["low volume"] += 1
                             if direction == 2:
                                 d.ob_sell_t = float("inf")

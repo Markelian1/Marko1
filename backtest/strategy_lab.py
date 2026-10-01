@@ -140,17 +140,20 @@ def donchian(tf=14400, n=20, rr=2.0, hold=48):
 def crt_daily(tf=3600, hold=24, retest=8, bars=None, **kw):
     """The PRO24 engine on the daily candle: range = previous day, sweep of
     it, order-block break on tf, retest, trend, premium/discount."""
-    base = dict(pro24_set()[0], models={"D1": None}, model_defs={"D1": (17, 1)}, candle=DAY, tf=tf,
+    base = dict(pro24_set(min_range_vol=0)[0], models={"D1": None}, model_defs={"D1": (17, 1)}, candle=DAY, tf=tf,
                 max_hold=hold * 3600, retest_sec=retest * 3600, max_spread=0.55, **kw)
     c = [(t, o, h, l, cl, sp + EXTRA) for (t, o, h, l, cl, sp) in (bars or m30)]
     return run(c, base)[0]
 
 
 def pro24():
+    """PRO24 v1.10 H4 part: all six candles with the range-volume filter."""
+    from liq_lab import load_vol
+    v30, v15 = load_vol("../data/XAUUSD_M30.csv"), load_vol("../data/XAUUSD_M15.csv")
     c30 = [(t, o, h, l, c, sp + EXTRA) for (t, o, h, l, c, sp) in m30 if t < m15[0][0]]
     c15 = [(t, o, h, l, c, sp + EXTRA) for (t, o, h, l, c, sp) in m15]
-    return ([t for c in pro24_set() for t in run(c30, dict(c, tf=1800, max_spread=0.55))[0]] +
-            [t for c in pro24_set() for t in run(c15, dict(c, max_spread=0.55))[0]])
+    return ([t for c in pro24_set() for t in run(c30, dict(c, tf=1800, max_spread=0.55, vol=v30))[0]] +
+            [t for c in pro24_set() for t in run(c15, dict(c, max_spread=0.55, vol=v15))[0]])
 
 
 # ---------------------------------------------------------------- scoring
@@ -183,7 +186,7 @@ if __name__ == "__main__":
              ("Donchian 20 H4", donchian()), ("CRT daily + H1 OB", crt_daily()),
              ("CRT daily + M30 OB", crt_daily(tf=1800))]
     print(f"{'':22}" + " | ".join(f"{n:^43}" for n in NAMES))
-    print(f"{'PRO24 v1.08':22}" + " | ".join(cell(split(base, k)) for k in range(3)))
+    print(f"{'PRO24 v1.10 (H4)':22}" + " | ".join(cell(split(base, k)) for k in range(3)))
     for name, tr in cands:
         print(f"{name:22}" + " | ".join(cell(split(tr, k)) for k in range(3)))
         print(f"{'  + PRO24':22}" + " | ".join(cell(split(base + tr, k)) for k in range(3)))

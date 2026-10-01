@@ -222,7 +222,7 @@ me shumë pak trade (~20 në vit) për ta konsideruar të provuar. Avantazhi i q
 
 # CRT PRO24 (MT5): versioni 24 orë, pa orare fikse
 
-Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.09). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
+Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.10). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
 
 - Ndjek **të 6 qirinjtë H4** të ditës (1AM, 5AM, 9AM, 1PM, 5PM, 9PM New York).
 - Hyn **kur vjen setup-i**, në çfarëdo ore: sweep i range-it, pastaj një qiri M15 mbyllet përtej qiririt
@@ -256,6 +256,39 @@ U mbajt varianti më i thjeshtë dhe më i qëndrueshëm.
 PRO24 është pozitiv çdo vit (2023 +44R, 2024 +15R, 2025 +42R, 2026 +11R). Ka më shumë trade,
 por më pak fitim për trade dhe rreth dyfish më shumë drawdown se versioni me orare.
 Për të njëjtin drawdown si Combined, përdor rreth **0.3%** rrezik.
+
+### v1.10: pa rregull me orë, filtër volumi në vend të tij
+
+Testi MT5 i v1.09 (2023.01–2026.09, 0.1%): 1190 trade, PF 1.34, **+22.9%**, DD **2.00%**.
+Sipas mënyrës: PRO24 944 trade +169.7R, Daily CRT 169 +23.4R, Inside day 77 +23.5R.
+
+**Inteligjenca e testuar** (`backtest/liq_lab.py`; 4 periudha: dy gjysmat M15 2022–26, M30 2020–22, M5 2025–26):
+
+| Ideja | PF | Përfundimi |
+|---|---|---|
+| Sweep i likuiditetit: majat/fundet H1 ose H4 (swing), OB, retest, trend (pa orë) | 0.71–1.34, negativ me M5 | pa avantazh |
+| Range "rrëshqitës" 4h ose 8h në vend të qiririt H4 | 1.04–1.15 | shumë më i dobët |
+| Volumi i sweep-it, zona me volum të lartë (volume profile), ana e POC | i ndryshëm nga periudha në periudhë | jo |
+| Sweep që merr edhe likuiditetin H1 | më keq në të treja | jo |
+| "Agjent" që fik llojin e setup-it pas një serie të keqe | më keq se rregulli fiks | jo |
+| **Volumi i range-it** (likuiditeti i range-it që fshihet) | si rregulli i Asias | **u fut** |
+
+Përfundimi kryesor: avantazhi vjen nga **struktura kohë–çmim e qirinjve H4** (PDF "Time & Price").
+Sweep-i në vetvete, në çfarëdo ore, nuk mjafton.
+
+**Filtri i volumit** (`InpMinRangeVol = 0.7`) zëvendëson rregullin me orë (`InpSkipAsia`, tani `false`):
+- Një qiri tregtohet vetëm kur range-i i tij u ndërtua me të paktën 0.7 herë tick volume-in e një qiriri
+  mesatar H4 të 5 ditëve të fundit.
+- Sweep-i i një range-i ku nuk tregtoi askush nuk është marrje likuiditeti.
+- Filtri heq rreth dy të tretat e qirinjve të Asias, por edhe qirinj të qetë në çdo orë tjetër.
+
+| PRO24 + Daily CRT + Inside day, 0.1% | 2020.03–2026.09 | Max DD | 2023.01–2026.09 |
+|---|---|---|---|
+| v1.09, rregull me orë (pa 9PM) | +28.8% | 2.29% | +20.4% |
+| **v1.10, filtër volumi** | **+28.3%** | **2.29%** | **+20.2%** |
+
+Fitim/DD (R) sipas periudhave: v1.09 3.8 / 3.6 / 9.6; v1.10 3.7 / 4.6 / 6.2.
+Pra v1.10 është më mirë në 2022–24 dhe pak më keq në 2024–26.
 
 ### v1.09: dy strategji të tjera në të njëjtin EA
 

@@ -53,6 +53,17 @@
 //     better in each: at 0.1% risk, 2020-2026 +29% instead of +20% with
 //     max DD 2.3% instead of 2.4%. Risk, daily loss limit and the max
 //     drawdown stop cover all of them.
+//   - v1.10, no clock rule left in the entries: the 9PM (Asia) skip is
+//     replaced by a volume filter (InpMinRangeVol, 0.7). A candle is
+//     traded only when its range was built with at least 0.7x the tick
+//     volume of an average H4 candle of the last 5 days: a sweep of a
+//     range nobody traded is not a liquidity grab. It drops about two
+//     thirds of the Asia candles and some quiet ones at any hour.
+//     2020-2026 at 0.1%: +28.3% (clock rule: +28.8%), max DD 2.29% both.
+//     Tested and not used: liquidity sweeps of H1/H4 swing highs/lows and
+//     a rolling 4h range (no clock; PF 0.7-1.1), sweep / break volume,
+//     volume-profile zones and the POC as filters, and a selector that
+//     switches setups off after a bad run of trades.
 //   - daily trend bias (previous close vs its 50-day average) and
 //     premium / discount of the range
 //   - SL beyond the sweep, TP 1:2, trade closed after 8 hours if still open
@@ -62,7 +73,8 @@
 //     against (in R) and a short description of the win or loss
 //
 // Tested on FP Trading XAUUSD 2023.01-2026.09 (simulation, 0.5% risk):
-//   v1.09 defaults (0.1% risk): ~1135 trades, +20% (sim), max DD 2.3%
+//   v1.10 defaults (0.1% risk): ~1200 trades, +20% (sim), max DD 2.3%
+//   v1.09 in MT5 (0.1% risk): 1190 trades, PF 1.34, +22.9%, max DD 2.0%
 //   v1.08 in MT5 (0.1% risk): 950 trades, PF 1.33, +18.3%, max DD 2.2%
 //   v1.07 (0.5% risk): ~900 trades, PF 1.30, +106%, max DD 11%, 513 losses
 //   v1.06 same simulation: ~1150 trades, PF 1.22, +101%, max DD 10%, 678 losses
@@ -75,7 +87,7 @@
 //   v1.01 (one position, market): 1226 trades, PF 1.17, +71%, max DD 11.1%
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.09"
+#property version   "1.10"
 #property description "CRT PRO24: the CRT_1AM_EA setup in every H4 candle, 24 hours, plus a daily CRT and an inside-day breakout."
 
 #include <Trade/Trade.mqh>
@@ -148,7 +160,8 @@ input ENUM_TIMEFRAMES InpEntryTF = PERIOD_M15; // Entry / order-block timeframe 
 input bool InpPerCandle    = true;  // One position per H4 candle (more entries, several trades open)
 input bool InpReentry      = true;  // New setup in the same candle after a trade closes
 input bool InpAddSelective = false; // Also trade the PDF Selective model (has fixed key times; magic +10)
-input bool InpSkipAsia     = true;  // Skip setups of the 9PM NY candle (Asia session, thin liquidity)
+input double InpMinRangeVol = 0.7;   // Volume filter: trade a candle only if its range had this x the average H4 tick volume of 5 days (0 = off)
+input bool InpSkipAsia     = false; // Skip the 9PM NY candle by the clock (v1.07-v1.09; replaced by the volume filter)
 
 input group "1b. EXTRA STRATEGIES (own magic numbers)"
 input bool InpDailyCRT     = true;  // Daily CRT: previous day's range, sweep, M30 order-block break, retest (magic +20)
@@ -267,6 +280,7 @@ struct Slot
    bool            pd;           // premium/discount filter
    double          slBuffer;     // SL beyond the sweep extreme
    bool            inside;       // inside-day breakout (no CRT candles)
+   double          minRangeVol;  // min tick volume of the range vs the average candle (0 = off)
    bool            mOn[MODELS];
    int             mFrom[MODELS];
    int             mTo[MODELS];
@@ -300,7 +314,7 @@ datetime  g_ddPanel   = 0;       // last panel refresh while stopped
 
 // Funnel: how many CRT candles, sweeps and order-block breaks there were
 // and why the signals were not traded.
-int       g_fCandles = 0, g_fNoData = 0, g_fNoBias = 0;
+int       g_fCandles = 0, g_fNoData = 0, g_fNoBias = 0, g_fQuiet = 0;
 int       g_fHighSweeps = 0, g_fLowSweeps = 0, g_fBreaks = 0, g_fTrades = 0;
 int       g_rej[REJECTS];
 string    g_rejName[REJECTS] = {"signals only", "key time", "against bias", "position open", "max trades",
@@ -504,8 +518,8 @@ void Skip(int why, string reason)
 
 string FunnelText()
 {
-   return StringFormat("CRT candles %d | no data %d | no bias %d | high sweeps %d | low sweeps %d | OB breaks %d | trades %d",
-                       g_fCandles, g_fNoData, g_fNoBias, g_fHighSweeps, g_fLowSweeps, g_fBreaks, g_fTrades);
+   return StringFormat("CRT candles %d | no data %d | quiet range %d | no bias %d | high sweeps %d | low sweeps %d | OB breaks %d | trades %d",
+                       g_fCandles, g_fNoData, g_fQuiet, g_fNoBias, g_fHighSweeps, g_fLowSweeps, g_fBreaks, g_fTrades);
 }
 
 string RejectText()
@@ -729,6 +743,32 @@ void InitModelDay(int s, int m, datetime crtNY)
       g_md[s][m].status = "no daily data";
       g_fNoData++;
       return;
+   }
+
+   // Liquidity of the range: a sweep only means something when the range was
+   // built with real volume. Tick volume per candle of the range vs the
+   // average candle of the last 5 days (quiet Asia ranges fall out here).
+   if(g_slot[s].minRangeVol > 0.0)
+   {
+      long   rv[], av[];
+      int    nr = CopyTickVolume(_Symbol, g_slot[s].tf, rngStart, crtSrv - 1, rv);
+      int    na = CopyTickVolume(_Symbol, g_slot[s].tf, crtSrv - 5 * 86400, crtSrv - 1, av);
+      double sr = 0.0, sa = 0.0;
+      for(int i = 0; i < nr; i++)
+         sr += (double)rv[i];
+      for(int i = 0; i < na; i++)
+         sa += (double)av[i];
+      double avgCandle = sa / (5.0 * 86400.0 / g_slot[s].candleSec);
+      double ratio     = avgCandle > 0.0 ? sr / RangeCandles(s, m) / avgCandle : 1.0;
+      if(ratio < g_slot[s].minRangeVol)
+      {
+         g_md[s][m].status = StringFormat("quiet range: volume %.2f x average", ratio);
+         g_fQuiet++;
+         if(InpVerbose)
+            Log(StringFormat("[%s%s] %s quiet range (volume %.2f x average), not traded",
+                             g_slot[s].name, ModelName(s, m), NYText(crtNY), ratio));
+         return;
+      }
    }
 
    g_md[s][m].rngHigh = hi;
@@ -1661,7 +1701,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "CRT PRO24 v1.09  |  " + _Symbol + "  |  " +
+   string s = "CRT PRO24 v1.10  |  " + _Symbol + "  |  " +
               (g_ddStopped ? "STOPPED: MAX DRAWDOWN (restart with InpResetDDStop = true)" : InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
@@ -1721,6 +1761,7 @@ void SetPro24(int s)
    g_slot[s].retest = InpEntryType == ENTRY_RETEST;  g_slot[s].perCandle = InpPerCandle;  g_slot[s].reentry = InpReentry;
    g_slot[s].candleSec = 4 * 3600;  g_slot[s].candleHour = -1;  g_slot[s].retestSec = InpRetestHours * 3600;
    g_slot[s].pd = true;  g_slot[s].slBuffer = InpSLBuffer;  g_slot[s].inside = false;
+   g_slot[s].minRangeVol = InpMinRangeVol;
    for(int m = 0; m < MODELS; m++)
       SetModel(s, m, !(InpSkipAsia && m == 5), -1, -1);   // 5 = the 9PM candle
 }
@@ -1735,6 +1776,7 @@ void SetSelective(int s)
    g_slot[s].retest = false;  g_slot[s].perCandle = false;  g_slot[s].reentry = false;
    g_slot[s].candleSec = 4 * 3600;  g_slot[s].candleHour = -1;  g_slot[s].retestSec = 0;
    g_slot[s].pd = true;  g_slot[s].slBuffer = InpSLBuffer;  g_slot[s].inside = false;
+   g_slot[s].minRangeVol = 0.0;
    for(int m = 0; m < MODELS; m++)
       SetModel(s, m, false, -1, -1);
    SetModel(s, 0, true, 200, 400);
@@ -1752,6 +1794,7 @@ void SetDailyCRT(int s)
    g_slot[s].retest = true;  g_slot[s].perCandle = false;  g_slot[s].reentry = InpReentry;
    g_slot[s].candleSec = 86400;  g_slot[s].candleHour = 17;  g_slot[s].retestSec = 8 * 3600;
    g_slot[s].pd = true;  g_slot[s].slBuffer = InpSLBuffer;  g_slot[s].inside = false;
+   g_slot[s].minRangeVol = 0.0;
    for(int m = 0; m < MODELS; m++)
       SetModel(s, m, m == 0, -1, -1);
 }
@@ -1765,6 +1808,7 @@ void SetInsideDay(int s)
    g_slot[s].retest = false;  g_slot[s].perCandle = false;  g_slot[s].reentry = false;
    g_slot[s].candleSec = 86400;  g_slot[s].candleHour = -1;  g_slot[s].retestSec = 0;
    g_slot[s].pd = false;  g_slot[s].slBuffer = 0.0;  g_slot[s].inside = true;
+   g_slot[s].minRangeVol = 0.0;
    for(int m = 0; m < MODELS; m++)
       SetModel(s, m, false, -1, -1);
 }
@@ -1773,7 +1817,7 @@ int OnInit()
 {
    if(InpNYOffset < -12 || InpNYOffset > 14 || InpRiskPercent <= 0.0 || InpRiskPercent > 10.0 ||
       !ValidHHMM(InpFridayClose) || InpMaxHoldHours < 0 || InpMaxTradesDay < 0 || InpRetestHours < 1 ||
-      InpDailyLossPct < 0.0 || InpMaxDDPct < 0.0 || InpMaxDDPct >= 100.0)
+      InpDailyLossPct < 0.0 || InpMaxDDPct < 0.0 || InpMaxDDPct >= 100.0 || InpMinRangeVol < 0.0)
    {
       Print("Invalid inputs");
       return INIT_PARAMETERS_INCORRECT;
@@ -1807,7 +1851,7 @@ int OnInit()
          ResetModelDay(k, m, 0);
    }
    ArrayInitialize(g_rej, 0);
-   g_fCandles = g_fNoData = g_fNoBias = g_fHighSweeps = g_fLowSweeps = g_fBreaks = g_fTrades = 0;
+   g_fCandles = g_fNoData = g_fQuiet = g_fNoBias = g_fHighSweeps = g_fLowSweeps = g_fBreaks = g_fTrades = 0;
    for(int k = 0; k < SLOTS; k++)
       for(int m = 0; m < MODELS; m++)
          g_pend[k][m].on = false;
@@ -1836,11 +1880,11 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += ModelName(k, m) + " ";
-      Log(StringFormat("CRT PRO24 v1.09 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("CRT PRO24 v1.10 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
-   Log(StringFormat("CRT PRO24 v1.09 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+   Log(StringFormat("CRT PRO24 v1.10 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 
