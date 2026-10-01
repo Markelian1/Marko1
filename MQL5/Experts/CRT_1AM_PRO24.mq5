@@ -42,6 +42,17 @@
 //     equity falls that far below its peak, the EA closes its trades and
 //     stops until restarted with InpResetDDStop = true. 2020-2026
 //     simulation at 0.1%: max DD 2.3%, about +3.4% a year.
+//   - v1.09, two more strategies, each with its own magic number:
+//     Daily CRT (InpDailyCRT, magic +20): the same setup on the daily
+//     candle, 17:00-17:00 NY: range = previous day, M30 order-block
+//     break, retest up to 8 hours, out after 24 hours.
+//     Inside day breakout (InpInsideDay, magic +30): yesterday stayed
+//     inside the day before; the first M30 close beyond yesterday's high
+//     (trend up) or low (trend down) enters, SL at the other side, TP 2R.
+//     Both were positive in 2020-22, 2022-24 and 2024-26 and made PRO24
+//     better in each: at 0.1% risk, 2020-2026 +29% instead of +20% with
+//     max DD 2.3% instead of 2.4%. Risk, daily loss limit and the max
+//     drawdown stop cover all of them.
 //   - daily trend bias (previous close vs its 50-day average) and
 //     premium / discount of the range
 //   - SL beyond the sweep, TP 1:2, trade closed after 8 hours if still open
@@ -51,8 +62,8 @@
 //     against (in R) and a short description of the win or loss
 //
 // Tested on FP Trading XAUUSD 2023.01-2026.09 (simulation, 0.5% risk):
-//   v1.08 defaults (0.1% risk): ~900 trades, PF 1.30, about +3.4% a year,
-//   max DD 2.3% (2020-2026)
+//   v1.09 defaults (0.1% risk): ~1135 trades, +20% (sim), max DD 2.3%
+//   v1.08 in MT5 (0.1% risk): 950 trades, PF 1.33, +18.3%, max DD 2.2%
 //   v1.07 (0.5% risk): ~900 trades, PF 1.30, +106%, max DD 11%, 513 losses
 //   v1.06 same simulation: ~1150 trades, PF 1.22, +101%, max DD 10%, 678 losses
 //   v1.06 in MT5: 1201 trades, PF 1.25, +129%, max DD 11.2%
@@ -64,8 +75,8 @@
 //   v1.01 (one position, market): 1226 trades, PF 1.17, +71%, max DD 11.1%
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.08"
-#property description "CRT PRO24: the CRT_1AM_EA setup in every H4 candle, 24 hours, no fixed hours."
+#property version   "1.09"
+#property description "CRT PRO24: the CRT_1AM_EA setup in every H4 candle, 24 hours, plus a daily CRT and an inside-day breakout."
 
 #include <Trade/Trade.mqh>
 
@@ -138,6 +149,10 @@ input bool InpPerCandle    = true;  // One position per H4 candle (more entries,
 input bool InpReentry      = true;  // New setup in the same candle after a trade closes
 input bool InpAddSelective = false; // Also trade the PDF Selective model (has fixed key times; magic +10)
 input bool InpSkipAsia     = true;  // Skip setups of the 9PM NY candle (Asia session, thin liquidity)
+
+input group "1b. EXTRA STRATEGIES (own magic numbers)"
+input bool InpDailyCRT     = true;  // Daily CRT: previous day's range, sweep, M30 order-block break, retest (magic +20)
+input bool InpInsideDay    = true;  // Inside day breakout with the trend: M30 close beyond yesterday's high/low (magic +30)
 
 input group "2. BIAS / PREMIUM-DISCOUNT"
 input ENUM_CRT_BIAS InpBias     = BIAS_TREND;      // Higher-timeframe bias
@@ -226,7 +241,7 @@ struct TradeRisk
    double commission;
 };
 
-#define SLOTS 2
+#define SLOTS 4   // 0 PRO24, 1 Selective, 2 Daily CRT, 3 Inside day
 
 // One strategy configuration (Active, Selective or Custom) with its own
 // magic number, entry timeframe, candles, exits and positions.
@@ -246,6 +261,12 @@ struct Slot
    bool            perCandle;    // own magic (base + candle) and position per H4 candle
    bool            reentry;      // keep watching the candle after a trade
    datetime        lastBar;      // open time of the entry-TF bar being formed
+   int             candleSec;    // CRT candle length (4h, 24h for the daily CRT)
+   int             candleHour;   // NY start hour of a single daily candle (-1 = the six H4 candles)
+   int             retestSec;    // how long a retest limit waits
+   bool            pd;           // premium/discount filter
+   double          slBuffer;     // SL beyond the sweep extreme
+   bool            inside;       // inside-day breakout (no CRT candles)
    bool            mOn[MODELS];
    int             mFrom[MODELS];
    int             mTo[MODELS];
@@ -262,6 +283,10 @@ TradeRisk g_risk[];
 int       g_mHour[MODELS]   = {1, 5, 9, 13, 17, 21};   // CRT candle start (NY hour)
 int       g_mRange[MODELS]  = {2, 1, 1, 1, 1, 1};      // H4 candles in the time-based range
 string    g_mName[MODELS]   = {"1AM", "5AM", "9AM", "1PM", "5PM", "9PM"};
+
+int    CandleHour(int s, int m)   { return g_slot[s].candleHour >= 0 ? g_slot[s].candleHour : g_mHour[m]; }
+int    RangeCandles(int s, int m) { return g_slot[s].candleHour >= 0 ? 1 : g_mRange[m]; }
+string ModelName(int s, int m)    { return g_slot[s].inside ? "INSIDE" : g_slot[s].candleHour >= 0 ? "D1" : g_mName[m]; }
 
 bool      g_ready     = false;
 bool      g_silent    = false;
@@ -668,7 +693,7 @@ void InitModelDay(int s, int m, datetime crtNY)
    g_fCandles++;
 
    datetime crtSrv   = ToServer(crtNY);
-   datetime rngStart = crtSrv - g_mRange[m] * 4 * 3600;
+   datetime rngStart = crtSrv - RangeCandles(s, m) * g_slot[s].candleSec;
 
    MqlRates rr[];
    int n = CopyRates(_Symbol, g_slot[s].tf, rngStart, crtSrv - 1, rr);
@@ -687,7 +712,7 @@ void InitModelDay(int s, int m, datetime crtNY)
    }
 
    MqlRates oc[];
-   if(CopyRates(_Symbol, g_slot[s].tf, crtSrv, crtSrv + 4 * 3600 - 1, oc) <= 0)   // 5PM opens after the daily break
+   if(CopyRates(_Symbol, g_slot[s].tf, crtSrv, crtSrv + g_slot[s].candleSec - 1, oc) <= 0)   // 5PM opens after the daily break
    {
       g_md[s][m].status = "no open";
       g_fNoData++;
@@ -751,13 +776,13 @@ void InitModelDay(int s, int m, datetime crtNY)
       g_fNoBias++;
 
    DrawBox(rngStart, crtSrv, lo, hi, clrDarkSlateGray);
-   DrawLevel(crtSrv, crtSrv + 4 * 3600, g_md[s][m].crtOpen, clrGold, STYLE_DOT);
-   DrawLevel(crtSrv, crtSrv + 4 * 3600, hi, clrTomato, STYLE_SOLID);
-   DrawLevel(crtSrv, crtSrv + 4 * 3600, lo, clrMediumSeaGreen, STYLE_SOLID);
+   DrawLevel(crtSrv, crtSrv + g_slot[s].candleSec, g_md[s][m].crtOpen, clrGold, STYLE_DOT);
+   DrawLevel(crtSrv, crtSrv + g_slot[s].candleSec, hi, clrTomato, STYLE_SOLID);
+   DrawLevel(crtSrv, crtSrv + g_slot[s].candleSec, lo, clrMediumSeaGreen, STYLE_SOLID);
 
    if(InpVerbose)
       Log(StringFormat("[%s%s] %s range %s - %s | open %s | prev-day mid %s | bias %s",
-                       g_slot[s].name, g_mName[m], NYText(crtNY), PriceText(lo), PriceText(hi),
+                       g_slot[s].name, ModelName(s, m), NYText(crtNY), PriceText(lo), PriceText(hi),
                        PriceText(g_md[s][m].crtOpen), PriceText(g_md[s][m].pdMid),
                        g_md[s][m].allowDir == 1 ? "BUY" : g_md[s][m].allowDir == 2 ? "SELL" :
                        g_md[s][m].allowDir == 3 ? "BOTH" : "NONE"));
@@ -782,7 +807,7 @@ bool InKeyTime(int s, int m, datetime ny)
 // Checks the filters and sends the order. dir 1 = buy, 2 = sell.
 bool TryEnter(int s, int m, int dir, datetime sigNY, double extreme)
 {
-   string tag = g_slot[s].name + g_mName[m] + (dir == 1 ? " BUY" : " SELL");
+   string tag = g_slot[s].name + ModelName(s, m) + (dir == 1 ? " BUY" : " SELL");
 
    if(!InpTradeEnabled)
    {
@@ -837,13 +862,13 @@ bool TryEnter(int s, int m, int dir, datetime sigNY, double extreme)
       return false;
    }
    // Premium / discount: sell above / buy below the middle of the range (or previous day).
-   if(InpPremDisc != PD_OFF && ((dir == 2 && bid < g_md[s][m].pdMid) || (dir == 1 && ask > g_md[s][m].pdMid)))
+   if(g_slot[s].pd && InpPremDisc != PD_OFF && ((dir == 2 && bid < g_md[s][m].pdMid) || (dir == 1 && ask > g_md[s][m].pdMid)))
    {
       Skip(REJ_PD, tag + (dir == 2 ? ": not in premium" : ": not in discount"));
       return false;
    }
 
-   double sl   = NormPrice(dir == 1 ? extreme - InpSLBuffer : extreme + InpSLBuffer);
+   double sl   = NormPrice(dir == 1 ? extreme - g_slot[s].slBuffer : extreme + g_slot[s].slBuffer);
    double risk = dir == 1 ? entry - sl : sl - entry;
    if(risk <= 0.0)
    {
@@ -880,7 +905,7 @@ bool TryEnter(int s, int m, int dir, datetime sigNY, double extreme)
       return false;
    }
 
-   string cmt = "CRT24 " + g_mName[m];
+   string cmt = "CRT24 " + g_slot[s].name + ModelName(s, m);
    g_trade.SetExpertMagicNumber(MagicOf(s, m));
    bool ok = dir == 1 ? g_trade.Buy(lots, _Symbol, entry, sl, tp, cmt)
                       : g_trade.Sell(lots, _Symbol, entry, sl, tp, cmt);
@@ -965,10 +990,10 @@ void PendingCheck()
 void ModelStep(int s, int m, const MqlRates &b, bool latest)
 {
    datetime ny   = ToNY(b.time);
-   long     into = ((long)ny - g_mHour[m] * 3600) % 86400;   // time since the candle start
+   long     into = ((long)ny - CandleHour(s, m) * 3600) % 86400;   // time since the candle start
    if(into < 0)
       into += 86400;
-   if(into >= 4 * 3600)
+   if(into >= g_slot[s].candleSec)
       return;   // only inside the CRT candle
    datetime crtNY = (datetime)((long)ny - into);
 
@@ -998,12 +1023,12 @@ void ModelStep(int s, int m, const MqlRates &b, bool latest)
 
       g_fBreaks++;
       if(InpVerbose)
-         Log(StringFormat("[%s%s] %s OB break at %s", g_slot[s].name, g_mName[m], dir == 2 ? "SELL" : "BUY", NYText(sigNY)));
+         Log(StringFormat("[%s%s] %s OB break at %s", g_slot[s].name, ModelName(s, m), dir == 2 ? "SELL" : "BUY", NYText(sigNY)));
 
       double extreme = dir == 2 ? MathMax(g_md[s][m].sweepHigh, b.high) : MathMin(g_md[s][m].sweepLow, b.low);
       bool entered = false;
       if(!latest)
-         Skip(REJ_STALE, g_slot[s].name + g_mName[m] + ": stale signal");
+         Skip(REJ_STALE, g_slot[s].name + ModelName(s, m) + ": stale signal");
       else if(g_slot[s].retest)
       {
          // Wait for price to come back to the broken order-block level.
@@ -1011,7 +1036,7 @@ void ModelStep(int s, int m, const MqlRates &b, bool latest)
          // would be refused at the fill anyway and blocked the candle.
          bool busy = g_pend[s][m].on || HasOpenPosition(MagicOf(s, m)) || (!g_slot[s].perCandle && AnyPending(s));
          if((g_md[s][m].allowDir & dir) == 0)
-            Skip(REJ_BIAS, g_slot[s].name + g_mName[m] + (dir == 1 ? " BUY" : " SELL") + ": against HTF bias");
+            Skip(REJ_BIAS, g_slot[s].name + ModelName(s, m) + (dir == 1 ? " BUY" : " SELL") + ": against HTF bias");
          else if(!busy)
          {
             g_pend[s][m].on      = true;
@@ -1021,11 +1046,11 @@ void ModelStep(int s, int m, const MqlRates &b, bool latest)
             g_pend[s][m].level   = dir == 2 ? g_md[s][m].obSellLow : g_md[s][m].obBuyHigh;
             g_pend[s][m].extreme = extreme;
             g_pend[s][m].sigNY   = sigNY;
-            g_pend[s][m].expires = TimeCurrent() + InpRetestHours * 3600;
+            g_pend[s][m].expires = TimeCurrent() + g_slot[s].retestSec;
             g_rtPlaced++;
             g_md[s][m].status = StringFormat("waiting for retest of %s", PriceText(g_pend[s][m].level));
-            Log(StringFormat("[%s] %s retest limit %s (SL side %s), valid %dh", g_mName[m], dir == 2 ? "SELL" : "BUY",
-                             PriceText(g_pend[s][m].level), PriceText(extreme), InpRetestHours));
+            Log(StringFormat("[%s%s] %s retest limit %s (SL side %s), valid %dh", g_slot[s].name, ModelName(s, m), dir == 2 ? "SELL" : "BUY",
+                             PriceText(g_pend[s][m].level), PriceText(extreme), g_slot[s].retestSec / 3600));
          }
       }
       else
@@ -1054,7 +1079,7 @@ void ModelStep(int s, int m, const MqlRates &b, bool latest)
       if(!g_md[s][m].sweptHigh)
       {
          g_fHighSweeps++;
-         DrawLabel(b.time, b.high, g_slot[s].name + g_mName[m] + " sweep", clrOrange, true);
+         DrawLabel(b.time, b.high, g_slot[s].name + ModelName(s, m) + " sweep", clrOrange, true);
       }
       g_md[s][m].sweptHigh  = true;
       g_md[s][m].sweepHigh  = b.high;
@@ -1067,7 +1092,7 @@ void ModelStep(int s, int m, const MqlRates &b, bool latest)
       if(!g_md[s][m].sweptLow)
       {
          g_fLowSweeps++;
-         DrawLabel(b.time, b.low, g_slot[s].name + g_mName[m] + " sweep", clrOrange, false);
+         DrawLabel(b.time, b.low, g_slot[s].name + ModelName(s, m) + " sweep", clrOrange, false);
       }
       g_md[s][m].sweptLow  = true;
       g_md[s][m].sweepLow  = b.low;
@@ -1075,6 +1100,84 @@ void ModelStep(int s, int m, const MqlRates &b, bool latest)
       g_md[s][m].obBuyTime = b.time;
       g_md[s][m].status    = "low swept, waiting for OB break";
    }
+}
+
+// ============================================================================
+// INSIDE DAY BREAKOUT
+// Yesterday (server day) stayed inside the day before it. Today, the first
+// M30 close beyond yesterday's high (daily trend up) or low (trend down)
+// enters at market; SL at the other side of yesterday, TP at InpRR, out
+// after 24 hours. One try per inside day.
+// ============================================================================
+
+void InsideInit(int s, datetime day)
+{
+   ResetModelDay(s, 0, day);
+   MqlRates dd[];
+   int k = CopyRates(_Symbol, PERIOD_D1, day, InpTrendDays + 2, dd);
+   int y = k > 0 && dd[k - 1].time >= day ? k - 2 : k - 1;      // yesterday
+   if(y < InpTrendDays || y < 1)
+   {
+      g_md[s][0].status = "no daily data";
+      return;
+   }
+   MqlRates yd = dd[y], pp = dd[y - 1];
+   g_md[s][0].rngHigh = yd.high;
+   g_md[s][0].rngLow  = yd.low;
+   if(!(yd.high < pp.high && yd.low > pp.low))
+   {
+      g_md[s][0].status = "yesterday was not an inside day";
+      return;
+   }
+   // trend: yesterday's close vs the average of the InpTrendDays closes up to yesterday
+   double sum = 0.0, rangeSum = 0.0;
+   int    rangeN = 0;
+   for(int j = y - InpTrendDays + 1; j <= y; j++)
+   {
+      sum += dd[j].close;
+      if(j > y - 14)
+      {
+         rangeSum += dd[j].high - dd[j].low;
+         rangeN++;
+      }
+   }
+   double avg = sum / InpTrendDays;
+   g_md[s][0].prevClose = yd.close;
+   g_md[s][0].trendAvg  = avg;
+   g_md[s][0].atr       = rangeN > 0 ? rangeSum / rangeN : 0.0;
+   g_md[s][0].pdMid     = (yd.high + yd.low) / 2.0;
+   g_md[s][0].allowDir  = yd.close > avg ? 1 : yd.close < avg ? 2 : 0;
+   g_md[s][0].ok        = true;
+   g_md[s][0].status    = g_md[s][0].allowDir == 1 ? "inside day: waiting for a close above " + PriceText(yd.high) :
+                          g_md[s][0].allowDir == 2 ? "inside day: waiting for a close below " + PriceText(yd.low) : "inside day, no trend";
+   DrawLevel(day, day + 86400, yd.high, clrTomato, STYLE_DASH);
+   DrawLevel(day, day + 86400, yd.low, clrMediumSeaGreen, STYLE_DASH);
+   if(InpVerbose)
+      Log(StringFormat("[%sINSIDE] %s inside day %s - %s | trend %s", g_slot[s].name, TimeToString(day, TIME_DATE),
+                       PriceText(yd.low), PriceText(yd.high), g_md[s][0].allowDir == 1 ? "UP" : g_md[s][0].allowDir == 2 ? "DOWN" : "NONE"));
+}
+
+// One closed M30 bar through the inside-day module.
+void InsideStep(int s, const MqlRates &b, bool latest)
+{
+   datetime day = DayStart(b.time);   // server day
+   if(g_md[s][0].key != day)
+      InsideInit(s, day);
+   if(!g_md[s][0].ok || g_md[s][0].done || g_md[s][0].allowDir == 0)
+      return;
+   int dir = g_md[s][0].allowDir == 1 && b.close > g_md[s][0].rngHigh ? 1 :
+             g_md[s][0].allowDir == 2 && b.close < g_md[s][0].rngLow  ? 2 : 0;
+   if(dir == 0)
+      return;
+   g_md[s][0].done = true;            // only the first break of the day counts
+   if(!latest)
+   {
+      Skip(REJ_STALE, g_slot[s].name + "INSIDE: stale signal");
+      return;
+   }
+   double extreme = dir == 1 ? g_md[s][0].rngLow : g_md[s][0].rngHigh;
+   bool   ok      = TryEnter(s, 0, dir, ToNY(b.time) + g_slot[s].tfSec, extreme);
+   g_md[s][0].status = ok ? "traded" : "break not traded: " + g_lastSkip;
 }
 
 // Closes positions opened before the latest daily exit time of their slot
@@ -1278,6 +1381,7 @@ struct JournalRec
 {
    ulong    posId;
    datetime tIn;
+   int      slot;
    int      model;
    int      dir;
    double   entry;
@@ -1342,6 +1446,7 @@ void JournalOpen(ulong posId, int s, int m, int dir, double entry, double sl, do
    ArrayResize(g_jr, n + 1, 16);
    g_jr[n].posId    = posId;
    g_jr[n].tIn      = TimeCurrent();
+   g_jr[n].slot     = s;
    g_jr[n].model    = m;
    g_jr[n].dir      = dir;
    g_jr[n].entry    = entry;
@@ -1425,9 +1530,9 @@ void JournalClose(ulong posId, double r, long reason)
    double depth = j.dir == 2 ? j.extreme - j.rngHigh : j.rngLow - j.extreme;
    double pos   = rng > 0.0 ? (j.entry - j.rngLow) / rng : 0.5;
    string tags  = "";
-   if(j.model == 5)
+   if(j.slot <= 1 && j.model == 5)
       tags += " / qiri 9PM (Asia)";
-   if(j.model == 4)
+   if(j.slot <= 1 && j.model == 4)
       tags += " / qiri 5PM (pas mbylljes ditore)";
    if(d.hour == 8 || d.hour == 9)
       tags += " / ora e lajmeve 8-10 NY";
@@ -1447,7 +1552,7 @@ void JournalClose(ulong posId, double r, long reason)
       tags += " / hyrje afer mesit te range-it";
 
    string side = j.dir == 1 ? "BUY" : "SELL";
-   string desc = g_mName[j.model] + " " + side + ": " + LossText(kind);
+   string desc = g_slot[j.slot].name + ModelName(j.slot, j.model) + " " + side + ": " + LossText(kind);
    if(kind == "L4")
       desc += StringFormat(" (maksimumi +%.1fR)", j.mfe);
    if(kind == "L1" || kind == "L2" || kind == "L3" || kind == "L4")
@@ -1459,7 +1564,7 @@ void JournalClose(ulong posId, double r, long reason)
 
    g_jCount++;
    FileWrite(g_jFile, IntegerToString(g_jCount), TimeToString(j.tIn, TIME_DATE | TIME_MINUTES),
-             TimeToString(ny, TIME_DATE | TIME_MINUTES), g_dayName[d.day_of_week], g_mName[j.model], side,
+             TimeToString(ny, TIME_DATE | TIME_MINUTES), g_dayName[d.day_of_week], g_slot[j.slot].name + ModelName(j.slot, j.model), side,
              F2(j.entry), F2(j.sl), F2(j.tp), F2(j.risk), F2(r),
              reason == DEAL_REASON_SL ? "SL" : reason == DEAL_REASON_TP ? "TP" : "kohe",
              IntegerToString((int)MathRound(minutes)), F2(j.mfe), F2(j.mae), F2(j.rngLow), F2(j.rngHigh),
@@ -1556,7 +1661,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "CRT PRO24 v1.08  |  " + _Symbol + "  |  " +
+   string s = "CRT PRO24 v1.09  |  " + _Symbol + "  |  " +
               (g_ddStopped ? "STOPPED: MAX DRAWDOWN (restart with InpResetDDStop = true)" : InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
@@ -1567,7 +1672,7 @@ void UpdatePanel()
    for(int k = 0; k < SLOTS; k++)
       for(int m = 0; m < MODELS; m++)
          if(g_pend[k][m].on)
-            s += StringFormat("\nWaiting retest: %s %s at %s (until %s)", g_mName[m], g_pend[k][m].dir == 2 ? "SELL" : "BUY",
+            s += StringFormat("\nWaiting retest: %s%s %s at %s (until %s)", g_slot[k].name, ModelName(k, m), g_pend[k][m].dir == 2 ? "SELL" : "BUY",
                               PriceText(g_pend[k][m].level), TimeToString(g_pend[k][m].expires, TIME_DATE | TIME_MINUTES));
 
    for(int k = 0; k < SLOTS; k++)
@@ -1575,6 +1680,8 @@ void UpdatePanel()
       if(!g_slot[k].on)
          continue;
       s += StringFormat("\n\n=== %s (%s, magic %s) ===", SlotTitle(k), EnumToString(g_slot[k].tf), IntegerToString((long)g_slot[k].magic));
+      if(g_slot[k].inside)
+         s += "\n[INSIDE]  " + (g_md[k][0].key > 0 ? TimeToString(g_md[k][0].key, TIME_DATE) + ": " + g_md[k][0].status : "waiting for the day");
       for(int m = 0; m < MODELS; m++)
       {
          if(!g_slot[k].mOn[m])
@@ -1582,7 +1689,7 @@ void UpdatePanel()
          string key = g_slot[k].mFrom[m] < 0 ? "whole candle" :
                       StringFormat("%02d:%02d-%02d:%02d", g_slot[k].mFrom[m] / 100, g_slot[k].mFrom[m] % 100,
                                    g_slot[k].mTo[m] / 100, g_slot[k].mTo[m] % 100);
-         s += StringFormat("\n[%s]  %s  |  %s", g_mName[m], key,
+         s += StringFormat("\n[%s]  %s  |  %s", ModelName(k, m), key,
                            g_md[k][m].key > 0 ? NYText(g_md[k][m].key) + ": " + g_md[k][m].status : "waiting for the candle");
       }
    }
@@ -1596,7 +1703,7 @@ void UpdatePanel()
 
 bool ValidHHMM(int v) { return v >= 0 && v <= 2359 && v % 100 < 60; }
 
-string SlotTitle(int s) { return s == 0 ? "PRO24" : "Selective"; }
+string SlotTitle(int s) { return s == 0 ? "PRO24" : s == 1 ? "Selective" : s == 2 ? "Daily CRT" : "Inside day"; }
 
 void SetModel(int s, int m, bool on, int from, int to)
 {
@@ -1612,6 +1719,8 @@ void SetPro24(int s)
    g_slot[s].tf = InpEntryTF;  g_slot[s].ohlc = false;  g_slot[s].newsPause = false;
    g_slot[s].exitHHMM = 0;  g_slot[s].maxHoldSec = InpMaxHoldHours * 3600;  g_slot[s].maxDay = InpMaxTradesDay;
    g_slot[s].retest = InpEntryType == ENTRY_RETEST;  g_slot[s].perCandle = InpPerCandle;  g_slot[s].reentry = InpReentry;
+   g_slot[s].candleSec = 4 * 3600;  g_slot[s].candleHour = -1;  g_slot[s].retestSec = InpRetestHours * 3600;
+   g_slot[s].pd = true;  g_slot[s].slBuffer = InpSLBuffer;  g_slot[s].inside = false;
    for(int m = 0; m < MODELS; m++)
       SetModel(s, m, !(InpSkipAsia && m == 5), -1, -1);   // 5 = the 9PM candle
 }
@@ -1624,11 +1733,40 @@ void SetSelective(int s)
    g_slot[s].tf = PERIOD_M30;  g_slot[s].ohlc = true;  g_slot[s].newsPause = false;
    g_slot[s].exitHHMM = 1200;  g_slot[s].maxHoldSec = 0;  g_slot[s].maxDay = 1;
    g_slot[s].retest = false;  g_slot[s].perCandle = false;  g_slot[s].reentry = false;
+   g_slot[s].candleSec = 4 * 3600;  g_slot[s].candleHour = -1;  g_slot[s].retestSec = 0;
+   g_slot[s].pd = true;  g_slot[s].slBuffer = InpSLBuffer;  g_slot[s].inside = false;
    for(int m = 0; m < MODELS; m++)
       SetModel(s, m, false, -1, -1);
    SetModel(s, 0, true, 200, 400);
    SetModel(s, 1, true, 500, 700);
    SetModel(s, 2, true, 930, 1100);
+}
+
+// The PRO24 setup on the daily candle (17:00-17:00 NY): range = previous
+// day, M30 order-block break, retest up to 8 hours, out after 24 hours.
+void SetDailyCRT(int s)
+{
+   g_slot[s].on = true;  g_slot[s].name = "D ";  g_slot[s].magic = InpMagic + 20;
+   g_slot[s].tf = PERIOD_M30;  g_slot[s].ohlc = false;  g_slot[s].newsPause = false;
+   g_slot[s].exitHHMM = 0;  g_slot[s].maxHoldSec = 24 * 3600;  g_slot[s].maxDay = InpMaxTradesDay;
+   g_slot[s].retest = true;  g_slot[s].perCandle = false;  g_slot[s].reentry = InpReentry;
+   g_slot[s].candleSec = 86400;  g_slot[s].candleHour = 17;  g_slot[s].retestSec = 8 * 3600;
+   g_slot[s].pd = true;  g_slot[s].slBuffer = InpSLBuffer;  g_slot[s].inside = false;
+   for(int m = 0; m < MODELS; m++)
+      SetModel(s, m, m == 0, -1, -1);
+}
+
+// Inside day breakout in the daily trend (see InsideStep).
+void SetInsideDay(int s)
+{
+   g_slot[s].on = true;  g_slot[s].name = "I ";  g_slot[s].magic = InpMagic + 30;
+   g_slot[s].tf = PERIOD_M30;  g_slot[s].ohlc = false;  g_slot[s].newsPause = false;
+   g_slot[s].exitHHMM = 0;  g_slot[s].maxHoldSec = 24 * 3600;  g_slot[s].maxDay = 0;
+   g_slot[s].retest = false;  g_slot[s].perCandle = false;  g_slot[s].reentry = false;
+   g_slot[s].candleSec = 86400;  g_slot[s].candleHour = -1;  g_slot[s].retestSec = 0;
+   g_slot[s].pd = false;  g_slot[s].slBuffer = 0.0;  g_slot[s].inside = true;
+   for(int m = 0; m < MODELS; m++)
+      SetModel(s, m, false, -1, -1);
 }
 
 int OnInit()
@@ -1650,10 +1788,15 @@ int OnInit()
       Print("Trend days must be 2-250");
       return INIT_PARAMETERS_INCORRECT;
    }
-   g_slot[1].on = false;
+   for(int k = 1; k < SLOTS; k++)
+      g_slot[k].on = false;
    SetPro24(0);
    if(InpAddSelective)
       SetSelective(1);
+   if(InpDailyCRT)
+      SetDailyCRT(2);
+   if(InpInsideDay)
+      SetInsideDay(3);
    for(int k = 0; k < SLOTS; k++)
    {
       g_slot[k].tfSec   = PeriodSeconds(g_slot[k].tf);
@@ -1692,12 +1835,12 @@ int OnInit()
       string models = "";
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
-            models += g_mName[m] + " ";
-      Log(StringFormat("CRT PRO24 v1.08 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+            models += ModelName(k, m) + " ";
+      Log(StringFormat("CRT PRO24 v1.09 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
-   Log(StringFormat("CRT PRO24 v1.08 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+   Log(StringFormat("CRT PRO24 v1.09 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 
@@ -1773,9 +1916,13 @@ void OnTick()
       newBar = true;
 
       for(int i = 0; i < n; i++)
+      {
          for(int m = 0; m < MODELS; m++)
             if(g_slot[k].mOn[m])
                ModelStep(k, m, bars[i], i == n - 1);
+         if(g_slot[k].inside)
+            InsideStep(k, bars[i], i == n - 1);
+      }
    }
    PendingCheck();
    if(!newBar)

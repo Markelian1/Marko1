@@ -222,7 +222,7 @@ me shumë pak trade (~20 në vit) për ta konsideruar të provuar. Avantazhi i q
 
 # CRT PRO24 (MT5): versioni 24 orë, pa orare fikse
 
-Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.08). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
+Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.09). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
 
 - Ndjek **të 6 qirinjtë H4** të ditës (1AM, 5AM, 9AM, 1PM, 5PM, 9PM New York).
 - Hyn **kur vjen setup-i**, në çfarëdo ore: sweep i range-it, pastaj një qiri M15 mbyllet përtej qiririt
@@ -256,6 +256,43 @@ U mbajt varianti më i thjeshtë dhe më i qëndrueshëm.
 PRO24 është pozitiv çdo vit (2023 +44R, 2024 +15R, 2025 +42R, 2026 +11R). Ka më shumë trade,
 por më pak fitim për trade dhe rreth dyfish më shumë drawdown se versioni me orare.
 Për të njëjtin drawdown si Combined, përdor rreth **0.3%** rrezik.
+
+### v1.09: dy strategji të tjera në të njëjtin EA
+
+Testi MT5 i v1.08 (2023.01–2026.09, 0.1%): 950 trade, PF 1.33, **+18.3%**, DD **2.18%**, 11 humbje radhazi,
+ndalimi 3.5% nuk u prek.
+
+Me `backtest/strategy_lab.py` u testuan 7 strategji shtesë, secila vetë dhe e kombinuar me PRO24, në tri periudha
+(2020.03–22.06, 2022.07–24.06, 2024.07–26.09). Kriteri: PRO24 + strategjia duhet të ketë raport fitim/drawdown
+më të mirë se PRO24 vetëm **në çdo periudhë**.
+
+| Strategjia (vetë) | 2020–22 | 2022–24 | 2024–26 | Me PRO24 |
+|---|---|---|---|---|
+| Breakout NR7 | PF 1.28 | 0.96 | 2.31 | jo në çdo periudhë |
+| **Breakout i ditës inside** | PF 1.38 | 1.23 | 3.40 | **më mirë në të treja** |
+| Pullback EMA20 H4 / H1 | PF 0.98 / 0.88 | 1.10 / 0.94 | 0.92 / 1.10 | më keq |
+| Donchian 20 H4 | PF 0.73 | 1.06 | 2.00 | më keq në 2020–22 |
+| CRT ditor + OB H1 | PF 1.07 | 1.17 | 1.05 | i dobët |
+| **CRT ditor + OB M30** | PF 1.16 | 1.31 | 1.29 | **më mirë në të treja** |
+
+Variantet fqinje (TP 1.5–2.5R, mbajtje 24/48h, retest 4/8/12h, mbajtje 12/24/48h) mbeten pozitive.
+Me çmime M15/M5 rezultatet mbeten të njëjta ose afër, sepse SL-të ditore janë të mëdha.
+
+| Fitim/DD (R) | 2020–22 | 2022–24 | 2024–26 |
+|---|---|---|---|
+| PRO24 | 3.0 | 3.0 | 7.2 |
+| **PRO24 + CRT ditor + inside day** | **3.8** | **3.6** | **9.6** |
+
+Me 0.1% rrezik në 2020.03–2026.09: **+28.8% në vend të +19.9%, DD 2.29% në vend të 2.44%**.
+
+- **Daily CRT** (`InpDailyCRT`, magic 770120): logjika e PRO24 mbi qiririn ditor 17:00–17:00 NY. Range-i është
+  dita e kaluar, pastaj vjen sweep-i, thyerja e OB-së në M30 dhe retest-i deri në 8 orë.
+  Filtrohet me trendin dhe premium/discount, ka TP 2R dhe mbyllet pas 24 orësh.
+- **Inside day** (`InpInsideDay`, magic 770130): dje qëndroi brenda ditës para saj. Sot mbyllja e parë M30 mbi
+  high-in e djeshëm (trend lart) ose nën low-in (trend poshtë) hyn me treg. SL është në anën tjetër të ditës
+  së djeshme, TP 2R, mbyllje pas 24 orësh, një provë për çdo ditë inside.
+- Rreziku, kufiri ditor dhe ndalimi i drawdown-it vlejnë për të gjitha. Secila strategji ka magic-un e vet
+  dhe del veçmas në "SUMMARY by mode" dhe në ditar.
 
 ### v1.08: drawdown i ulët dhe ndalim automatik
 
