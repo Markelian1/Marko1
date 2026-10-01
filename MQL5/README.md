@@ -257,6 +257,19 @@ PRO24 është pozitiv çdo vit (2023 +44R, 2024 +15R, 2025 +42R, 2026 +11R). Ka 
 por më pak fitim për trade dhe rreth dyfish më shumë drawdown se versioni me orare.
 Për të njëjtin drawdown si Combined, përdor rreth **0.3%** rrezik.
 
+### Pas v1.10: çfarë u testua dhe nuk u fut
+
+Kriteri mbetet i njëjtë: portofoli (PRO24 + Daily CRT + Inside day, 0.1%) duhet të dalë më mirë për të
+njëjtin drawdown në çdo periudhë. Përndryshe nuk del version i ri.
+
+| Ideja | Rezultati |
+|---|---|
+| CRT mbi qirinj 8h (Asia/Londër/NY), 12h, 2h si strategji shtesë | 12h e mirë në 2020–24, e dobët në 2024–26; asnjë nuk e përmirëson portofolin kudo |
+| Breakout i qiririt inside H4, NR4 ditor | humbës ose i paqëndrueshëm |
+| TP 2.5R / 3R / 3.5R / 4R, mbajtje 12h / 16h te PRO24 | 3R jep +34.5% në vend të +28.3% (2020–26), por DD 3.22% në vend të 2.29%; për të njëjtin DD del +24.5%, pra më keq |
+| TP 2.5R / 3R te Daily CRT dhe Inside day | jo më mirë se 2R |
+| Rrezik 1.5× kur volumi para hyrjes është > 1.3× mesatarja | +3–7% fitim/DD, shumë pak dhe jo monoton |
+
 ### v1.10: pa rregull me orë, filtër volumi në vend të tij
 
 Testi MT5 i v1.09 (2023.01–2026.09, 0.1%): 1190 trade, PF 1.34, **+22.9%**, DD **2.00%**.
