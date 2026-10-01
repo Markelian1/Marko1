@@ -154,7 +154,7 @@ Optimizimi 2 (vetëm "Require an active HTF CRT in the same direction"):
 
 # CRT 1AM EA (MT5): strategjia nga PDF-të "1AM CRT" dhe "Time & Price"
 
-Skedari: `Experts/CRT_1AM_EA.mq5` (v1.03). Është EA e re, e veçantë nga CRT_MTF_EA.
+Skedari: `Experts/CRT_1AM_EA.mq5` (v1.04). Është EA e re, e veçantë nga CRT_MTF_EA.
 Nuk hap trade në çdo CRT, por vetëm në qiririn H4 të orës **1:00 New York** dhe
 vetëm në orën kyçe.
 
@@ -186,6 +186,31 @@ EA-ja i llogarit të gjitha oraret në kohën e New York-ut:
 - Kontroll: në MT5 hape **Market Watch**; ora lart është ora e serverit. Kur në New York
   është 00:00, serveri duhet të tregojë 07:00. Nëse jo, ndryshoje `InpNYOffset`.
 - Te paneli i EA-së shfaqet "New York time"; duhet të përputhet me orën reale të NY.
+
+## v1.04: mënyra Combined dhe pa hyrje në orën e lajmeve
+
+Testi në MT5 i v1.03 Active (2023.01.01–2026.09.26) dha 857 trade, PF 1.21, +57%, DD 7.1%.
+Simulatori për të njëjtën periudhë jep 856 trade dhe PF 1.25, pra EA-ja dhe simulatori përputhen.
+
+Kërkesa e radhës ishte një kurbë më e rregullt. U testuan 12 ide. Dy kaluan edhe në të dhënat e
+pavarura 2020–2022 (M30), që nuk u përdorën për t'i gjetur:
+
+1. **Pa hyrje të reja 08:00–10:00 NY** (lajmet e SHBA-së në 8:30). Në 2020–2022 DD ra nga 18.5R në 12.7R.
+2. **Active + Selective në të njëjtën EA** (`InpMode = Combined`). Secila ka magic-un e vet
+   (Selective = magic + 1), pra mund të jenë hapur deri në 2 pozicione njëkohësisht.
+
+Nuk kaluan dhe nuk u futën: break-even, TP 1.5, mbajtja 6/12 orë, kufiri 2–3 trade në ditë,
+trendi i dyfishtë (50 & 20 / 50 & 100), kufiri i SL ndaj ATR dhe filtri i së enjtes.
+
+Simulimi për 2023.01.01–2026.09.26 me 0.5% rrezik për trade:
+
+| | Trade | Win | PF | Total | Max DD | Muaj pozitivë | Fitimi |
+|---|---|---|---|---|---|---|---|
+| v1.03 Active | 856 | 44.6% | 1.25 | +109R | 13.4R | 27/45 | +69% |
+| v1.04 Active | 744 | 46.2% | 1.35 | +126R | 11.6R | 31/45 | +85% |
+| **v1.04 Combined** | **787** | **47.0%** | **1.40** | **+151R** | **13.3R** | **33/45** | **+109%** |
+
+Llogaria duhet të jetë **hedging**, që dy pozicionet të mos bashkohen në një.
 
 ## Laboratori i modeleve (`backtest/model_lab.py`): 52 kombinime
 
@@ -307,9 +332,9 @@ kontrollo `InpNYOffset`.
 1. Kopjo `Experts/CRT_1AM_EA.mq5` te `MQL5/Experts/`, hape në MetaEditor, **F7**.
 2. Strategy Tester:
    - Expert: `CRT_1AM_EA`, Symbol: XAUUSD, Timeframe: M15
-   - Date: **2022.07.01 – 2026.09.30**, Forward: **No**
+   - Date: **2023.01.01 – 2026.09.26**, Forward: **No**
    - Modeling: **1 minute OHLC**
-   - `InpMode`: **Active** (fillestare) ose **Selective**
+   - `InpMode`: **Combined** (fillestare), Active, Selective ose Custom
 3. Te **Inputs**: klik i djathtë → **Reset**. Mos ndrysho asgjë në provën e parë.
 4. Pas testit dërgo skedën **Backtest** dhe rreshtat `CRT 1AM FUNNEL`, `CRT 1AM REJECTED`
    dhe `CRT 1AM SUMMARY` nga **Journal**.

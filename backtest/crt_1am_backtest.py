@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline backtest of CRT_1AM_EA (MQL5/Experts/CRT_1AM_EA.mq5, v1.03).
+"""Offline backtest of CRT_1AM_EA (MQL5/Experts/CRT_1AM_EA.mq5, v1.04).
 
 Replays M1 bars (server time) and runs the same rules as the EA:
 
@@ -42,6 +42,7 @@ MODELS = {"1AM": (1, 2), "5AM": (5, 1), "9AM": (9, 1), "1PM": (13, 1), "5PM": (1
 DEFAULT = dict(ny_offset=7, tf=1800, sma=50,
                models={"1AM": (200, 400), "5AM": (500, 700), "9AM": (930, 1100)}, bias="sma", pd="range", ohlc=True,
                tp="rr", rr=2.0, min_rr=1.5, sl_buffer=0.30, exit_hhmm=1200, max_hold=0, max_day=1, fri_close=1600,
+               skip_hours=(8, 9),
                min_sl=1.00, min_sl_x=4.0, max_spread=0.50)
 SELECTIVE = DEFAULT
 # EA "Active" mode: every H4 candle from 1AM to 5PM, M15 entries, no OHLC rule,
@@ -60,7 +61,7 @@ class ModelDay:
         self.ok = False
         self.done = False
         self.allow = 0
-        self.rng_hi = self.rng_lo = self.crt_open = self.pd_mid = 0.0
+        self.rng_hi = self.rng_lo = self.crt_open = self.pd_mid = self.atr = 0.0
         self.swept_hi = self.swept_lo = False
         self.sweep_hi = self.sweep_lo = 0.0
         self.ob_sell_low = self.ob_buy_high = 0.0
@@ -110,6 +111,12 @@ def run(bars, cfg):
         prev_dir = 1 if prev[4] > prev[1] else 2 if prev[4] < prev[1] else 0
         closes = [d1[x][4] for x in d1_days[max(0, i - cfg["sma"]):i]]
         sma_dir = 0 if len(closes) < cfg["sma"] else 1 if prev[4] > sum(closes) / len(closes) else 2
+        if cfg.get("sma2") and sma_dir:
+            c2 = [d1[x][4] for x in d1_days[max(0, i - cfg["sma2"]):i]]
+            dir2 = 1 if prev[4] > sum(c2) / len(c2) else 2
+            sma_dir = sma_dir if dir2 == sma_dir else 0
+        rngs = [d1[x][2] - d1[x][3] for x in d1_days[max(0, i - 14):i]]
+        d.atr = sum(rngs) / len(rngs)
         if cfg["bias"] == "none":
             d.allow = 3
         elif cfg["bias"] == "d1":
@@ -136,6 +143,10 @@ def run(bars, cfg):
         if pos is not None:
             return "position open"
         ny_t = t - off
+        if (ny_t // DAY + 3) % 7 in cfg.get("skip_wdays", ()):
+            return "weekday"
+        if (ny_t % DAY) // 3600 in cfg.get("skip_hours", ()):
+            return "news hour"
         if cfg.get("fri_close", 0) > 0 and (ny_t // DAY + 3) % 7 == 4 and (ny_t % DAY) // 60 >= hhmm_min(cfg["fri_close"]) - 240:
             return "Friday"
         day_ny = (t - off) - (t - off) % DAY
@@ -155,6 +166,8 @@ def run(bars, cfg):
             return "SL side"
         if risk < max(cfg["min_sl"], cfg["min_sl_x"] * spread):
             return "SL too small"
+        if cfg.get("max_sl_atr") and risk > cfg["max_sl_atr"] * d.atr:
+            return "SL too big"
         if cfg["tp"] == "rr":
             tp = entry + cfg["rr"] * risk if direction == 1 else entry - cfg["rr"] * risk
         else:
@@ -163,7 +176,9 @@ def run(bars, cfg):
             if reward <= 0 or reward / risk < cfg["min_rr"]:
                 return "RR"
         entries_day[day_ny] += 1
-        return dict(dir=direction, entry=entry, sl=sl, tp=tp, risk=risk, t_in=t, model=name)
+        return dict(dir=direction, entry=entry, sl=sl, tp=tp, risk=risk, t_in=t, model=name,
+                    rng=d.rng_hi - d.rng_lo, crt_open=d.crt_open, pd_mid=d.pd_mid,
+                    depth=(extreme - d.rng_hi) if direction == 2 else (d.rng_lo - extreme))
 
     def close(p, price, t, why):
         r = (price - p["entry"]) / p["risk"] if p["dir"] == 1 else (p["entry"] - price) / p["risk"]
@@ -263,6 +278,11 @@ def run(bars, cfg):
             elif l + spread <= pos["tp"]:
                 close(pos, pos["tp"], t, "TP")
                 pos = None
+        # ---- break-even after +be_r (from the next bar on) ---------------
+        if pos is not None and cfg.get("be_r", 0) > 0:
+            trig = pos["entry"] + cfg["be_r"] * pos["risk"] if pos["dir"] == 1 else pos["entry"] - cfg["be_r"] * pos["risk"]
+            if (pos["dir"] == 1 and h >= trig) or (pos["dir"] == 2 and l + spread <= trig):
+                pos["sl"] = max(pos["sl"], pos["entry"]) if pos["dir"] == 1 else min(pos["sl"], pos["entry"])
 
     return trades, skips, funnel
 
