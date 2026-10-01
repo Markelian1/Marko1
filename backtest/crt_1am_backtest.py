@@ -215,6 +215,10 @@ def run(bars, cfg):
             return "OHLC"
         if cfg["pd"] != "off" and ((direction == 2 and bid < d.pd_mid) or (direction == 1 and ask > d.pd_mid)):
             return "premium/discount"
+        f = cfg.get("pd_frac", 0.5)           # deeper premium / discount: sell in the top (1 - f), buy in the bottom
+        if f != 0.5 and ((direction == 2 and bid < d.rng_lo + f * (d.rng_hi - d.rng_lo)) or
+                         (direction == 1 and ask > d.rng_hi - f * (d.rng_hi - d.rng_lo))):
+            return "premium/discount"
         if cfg.get("pd_day") and ((direction == 2 and bid < d.prev_mid) or (direction == 1 and ask > d.prev_mid)):
             return "day premium/discount"
         sl = extreme - cfg["sl_buffer"] if direction == 1 else extreme + cfg["sl_buffer"]
@@ -274,7 +278,8 @@ def run(bars, cfg):
             if len(recent) > 20:
                 recent.pop(0)
             for name in cfg["models"]:
-                crt_ny = ny - (ny - defs[name][0] * 3600) % DAY     # latest start of this candle
+                # latest start of this candle (align = 7 days and anchor_day = 3, a Sunday, for weekly candles)
+                crt_ny = ny - (ny - defs[name][0] * 3600 - cfg.get("anchor_day", 0) * DAY) % cfg.get("align", DAY)
                 if not crt_ny <= ny < crt_ny + CANDLE:
                     continue
                 d = md.get(name)

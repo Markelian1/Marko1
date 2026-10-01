@@ -269,6 +269,9 @@ njëjtin drawdown në çdo periudhë. Përndryshe nuk del version i ri.
 | TP 2.5R / 3R / 3.5R / 4R, mbajtje 12h / 16h te PRO24 | 3R jep +34.5% në vend të +28.3% (2020–26), por DD 3.22% në vend të 2.29%; për të njëjtin DD del +24.5%, pra më keq |
 | TP 2.5R / 3R te Daily CRT dhe Inside day | jo më mirë se 2R |
 | Rrezik 1.5× kur volumi para hyrjes është > 1.3× mesatarja | +3–7% fitim/DD, shumë pak dhe jo monoton |
+| CRT javor (java e kaluar, OB M30/H1/H4, retest 12–24h) | 15–43 trade në periudhë, pa avantazh |
+| PRO24 pa re-entry | fitim/DD +7% (DD 2.09% në vend të 2.29%), por më keq në 2020–22 |
+| Retest 2h/6h, SL buffer 0.10/0.60, premium/discount 60%/70%, OHLC, trend 20/100 ditë | asnjë më mirë kudo |
 
 ### v1.10: pa rregull me orë, filtër volumi në vend të tij
 
