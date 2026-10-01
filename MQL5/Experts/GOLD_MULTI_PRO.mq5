@@ -54,9 +54,11 @@
 //   day, the range candle, H4 EMA 20/50 or the last 24h also point up. A
 //   CRT buy comes after the range was sold and its low swept; those trades
 //   are most of the profit (filters cut 40-80% of it, PF unchanged).
+// v1.02: the screenshots are copied to Common\Files\GOLD_MULTI_PRO_shots,
+//   next to the journal (the tester kept them in its agent folder).
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.01"
+#property version   "1.02"
 #property description "GOLD MULTI PRO: six tested XAUUSD setups (CRT H4, daily CRT, inside day, displacement, Bollinger and CCI pullbacks), every trade with its reason."
 
 #include <Trade/Trade.mqh>
@@ -180,7 +182,7 @@ input bool InpShowPanel = true;  // Show status panel
 input bool InpDraw      = true;  // Draw ranges, sweeps and entries
 input bool InpVerbose   = true;  // Print setups to the journal
 input bool InpJournal   = true;  // Write every trade with its reason to Common\Files\GOLD_MULTI_PRO_journal.csv
-input ENUM_SHOTS InpShots = SHOTS_CLOSE; // Chart screenshot of every trade (visual tester or live), MQL5\Files\GOLD_MULTI_PRO_shots
+input ENUM_SHOTS InpShots = SHOTS_CLOSE; // Chart screenshot of every trade (visual tester or live), Common\Files\GOLD_MULTI_PRO_shots
 input int  InpShotWidth  = 1600; // Screenshot width (pixels)
 input int  InpShotHeight = 900;  // Screenshot height (pixels)
 
@@ -1779,10 +1781,29 @@ void PrintTradeSummary()
 
 // ============================================================================
 // SCREENSHOTS (visual tester and live): the chart of every trade as a PNG in
-// MQL5\Files\GOLD_MULTI_PRO_shots (in the tester: Tester\Agent-...\MQL5\Files)
+// Common\Files\GOLD_MULTI_PRO_shots, next to the journal. MT5 writes the
+// picture into the EA's own folder (in the tester an agent folder), so it is
+// copied to the common folder right away.
 // ============================================================================
 
 bool ShotsOn() { return InpShots != SHOTS_OFF && !g_silent && !g_noChart; }
+
+bool CopyToCommon(string name)
+{
+   int in = FileOpen(name, FILE_READ | FILE_BIN);
+   if(in == INVALID_HANDLE)
+      return false;
+   uchar buf[];
+   uint  n = FileReadArray(in, buf);
+   FileClose(in);
+   int out = FileOpen(name, FILE_WRITE | FILE_BIN | FILE_COMMON);
+   if(out == INVALID_HANDLE)
+      return false;
+   FileWriteArray(out, buf, 0, (int)n);
+   FileClose(out);
+   FileDelete(name);
+   return true;
+}
 
 string SafeName(string v)
 {
@@ -1817,6 +1838,9 @@ string Shot(datetime from, string tag)
       Log("Screenshot failed: " + name + ", error " + IntegerToString(GetLastError()));
       return "";
    }
+   if(!CopyToCommon(name))
+      Log("Screenshot " + name + " stays in " + TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL5\\Files (copy failed, error " +
+          IntegerToString(GetLastError()) + ")");
    return name;
 }
 
@@ -2188,7 +2212,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "GOLD MULTI PRO v1.01  |  " + _Symbol + "  |  " +
+   string s = "GOLD MULTI PRO v1.02  |  " + _Symbol + "  |  " +
               (g_ddStopped ? "STOPPED: MAX DRAWDOWN (restart with InpResetDDStop = true)" : InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
@@ -2361,7 +2385,7 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += ModelName(k, m) + " ";
-      Log(StringFormat("GOLD MULTI PRO v1.01 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("GOLD MULTI PRO v1.02 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
@@ -2370,8 +2394,8 @@ int OnInit()
       if(XOn(x))
          xl += StringFormat("%s (magic %s)  ", g_xName[x], IntegerToString((long)XMagic(x)));
    if(xl != "")
-      Log("GOLD MULTI PRO v1.01 | H4 setups: " + xl);
-   Log(StringFormat("GOLD MULTI PRO v1.01 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+      Log("GOLD MULTI PRO v1.02 | H4 setups: " + xl);
+   Log(StringFormat("GOLD MULTI PRO v1.02 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 
@@ -2384,7 +2408,11 @@ int OnInit()
    JournalStart();
    DDInit();
    if(ShotsOn())
-      Log("Screenshots: " + TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL5\\Files\\GOLD_MULTI_PRO_shots");
+   {
+      FolderCreate("GOLD_MULTI_PRO_shots", FILE_COMMON);
+      FolderCreate("GOLD_MULTI_PRO_shots");
+      Log("Screenshots: " + TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files\\GOLD_MULTI_PRO_shots");
+   }
    else if(InpShots != SHOTS_OFF && MQLInfoInteger(MQL_TESTER))
       Log("Screenshots need the visual mode of the Strategy Tester (Visual mode with the display of charts).");
 

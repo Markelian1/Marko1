@@ -1,0 +1,371 @@
+<title>Gold Multi Pro Trades</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: trading-desk console. Trade list on the left, chart and the EA's written analysis on the right; stacks on phones. */
+:root {
+  --bg: #f4f3ef; --panel: #fffefa; --line: #dedad0; --fg: #1f1d18; --muted: #6d685c;
+  --accent: #a87412; --accent-soft: #f3e6c8;
+  --up: #1d8a5a; --down: #c2412f; --up-soft: rgba(29,138,90,.16); --down-soft: rgba(194,65,47,.15);
+  --range: rgba(168,116,18,.12); --range-line: rgba(168,116,18,.55); --grid: rgba(31,29,24,.07);
+  --sel: #efe4c9;
+  --font-ui: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121210; --panel: #1a1a17; --line: #2e2d28; --fg: #ebe7dc; --muted: #9a9484;
+  --accent: #e0aa45; --accent-soft: #3a2f17;
+  --up: #3cc28a; --down: #ef6a55; --up-soft: rgba(60,194,138,.16); --down-soft: rgba(239,106,85,.16);
+  --range: rgba(224,170,69,.10); --range-line: rgba(224,170,69,.55); --grid: rgba(235,231,220,.07);
+  --sel: #2c2618; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121210; --panel: #1a1a17; --line: #2e2d28; --fg: #ebe7dc; --muted: #9a9484;
+  --accent: #e0aa45; --accent-soft: #3a2f17;
+  --up: #3cc28a; --down: #ef6a55; --up-soft: rgba(60,194,138,.16); --down-soft: rgba(239,106,85,.16);
+  --range: rgba(224,170,69,.10); --range-line: rgba(224,170,69,.55); --grid: rgba(235,231,220,.07);
+  --sel: #2c2618; color-scheme: dark }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 14px; }
+.wrap { padding-inline: 16px; padding-block: 14px 24px; display: flex; flex-direction: column; gap: 14px; max-width: 1500px; margin: 0 auto; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px 24px; }
+h1 { font-size: 20px; font-weight: 700; letter-spacing: .01em; margin: 0; text-wrap: balance; }
+h1 span { color: var(--accent); }
+.sub { color: var(--muted); font-size: 13px; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.stats { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 7px 12px; text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--line); }
+tbody tr + tr td { border-top: 1px solid var(--line); }
+tfoot td { border-top: 1px solid var(--line); font-weight: 600; }
+.main { display: grid; grid-template-columns: minmax(260px, 330px) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 860px) { .main { grid-template-columns: minmax(0, 1fr); } .list-box { order: 2; } }
+.list-box { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); display: flex; flex-direction: column; min-width: 0; }
+.filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; border-bottom: 1px solid var(--line); }
+.filters label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; min-width: 0; }
+select, input { font: inherit; font-size: 13px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; min-width: 0; }
+select:focus-visible, input:focus-visible, button:focus-visible, .row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fsum { padding: 8px 10px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.fsum b { color: var(--fg); font-weight: 600; }
+.rows { overflow-y: auto; max-height: 640px; }
+@media (max-width: 860px) { .rows { max-height: 380px; } }
+.row { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.row:hover { background: var(--accent-soft); }
+.row.on { background: var(--sel); box-shadow: inset 3px 0 0 var(--accent); }
+.row .n { color: var(--muted); }
+.row .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .what small { color: var(--muted); display: block; font-size: 11px; }
+.pill { font-family: var(--font-num); font-size: 12px; padding: 1px 7px; border-radius: 10px; font-variant-numeric: tabular-nums; }
+.pill.w { background: var(--up-soft); color: var(--up); }
+.pill.l { background: var(--down-soft); color: var(--down); }
+.side { font-weight: 600; font-size: 11px; letter-spacing: .04em; }
+.side.b { color: var(--up); } .side.s { color: var(--down); }
+.view { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.chart-box { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 10px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.ttl { font-size: 15px; font-weight: 600; min-width: 0; }
+.ttl small { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 6px; }
+.btns { display: flex; gap: 6px; flex-wrap: wrap; }
+button { font: inherit; font-size: 12.5px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.on { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+canvas { width: 100%; height: clamp(300px, 52vh, 540px); display: block; }
+.readout { font-size: 12px; color: var(--muted); min-height: 16px; }
+.detail { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 14px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px 14px; }
+.kv div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kv span { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.kv b { font-family: var(--font-num); font-weight: 500; font-variant-numeric: tabular-nums; }
+.why h3, .how h3 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+.why ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; line-height: 1.5; max-width: 95ch; }
+.how p { margin: 0; line-height: 1.5; max-width: 95ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11.5px; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Gold Multi Pro <span>·</span> trade-t e testit</h1>
+    <div class="sub" id="period"></div>
+  </header>
+
+  <div class="stats"><table id="stab"></table></div>
+
+  <div class="main">
+    <section class="list-box" aria-label="Lista e trade-ve">
+      <div class="filters">
+        <label for="fStrat">Strategjia<select id="fStrat"></select></label>
+        <label for="fRes">Rezultati<select id="fRes">
+          <option value="all">Te gjitha</option><option value="w">Fitime</option><option value="l">Humbje</option>
+          <option value="L1">L1 kthim menjehere</option><option value="L2">L2 pa drejtim</option>
+          <option value="L3">L3 pak ne favor</option><option value="L4">L4 fitim i humbur</option>
+          <option value="L5">L5 dalje me kohe</option></select></label>
+        <label for="fDir">Drejtimi<select id="fDir"><option value="0">Te dyja</option><option value="1">BUY</option><option value="-1">SELL</option></select></label>
+        <label for="fYear">Viti<select id="fYear"></select></label>
+      </div>
+      <div class="fsum" id="fsum"></div>
+      <div class="rows" id="rows" role="listbox" aria-label="Trade-t"></div>
+    </section>
+
+    <section class="view">
+      <div class="chart-box">
+        <div class="bar">
+          <div class="ttl" id="ttl"></div>
+          <div class="btns">
+            <button id="prev" aria-label="Trade-i i meparshem">&larr;</button>
+            <button id="next" aria-label="Trade-i tjeter">&rarr;</button>
+            <button data-tf="15" class="tf">M15</button>
+            <button data-tf="60" class="tf">H1</button>
+            <button data-tf="240" class="tf">H4</button>
+          </div>
+        </div>
+        <canvas id="cv" aria-label="Grafiku i trade-it"></canvas>
+        <div class="bar">
+          <div class="legend">
+            <span><i style="background:var(--range);border:1px solid var(--range-line)"></i>range i kohes</span>
+            <span><i style="background:var(--down-soft)"></i>rreziku (hyrja &rarr; SL)</span>
+            <span><i style="background:var(--up-soft)"></i>objektivi (hyrja &rarr; TP)</span>
+            <span><i style="background:var(--accent)"></i>sweep</span>
+          </div>
+          <div class="readout num" id="readout"></div>
+        </div>
+      </div>
+      <div class="detail" id="detail"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+const DATA = __DATA__;
+const NY = 7 * 3600;
+const KIND = { L1: "kthim i menjehershem kunder", L2: "nuk shkoi kurre ne favor", L3: "pak ne favor, pastaj SL",
+  L4: "arriti +1R, pastaj u kthye ne SL", L5: "mbyllje me kohe/sinjal ne humbje", W1: "preku TP", W2: "mbyllje me kohe/sinjal ne fitim" };
+const GROUP = s => s.startsWith("CRT ") ? "CRT H4" : s === "D D1" ? "CRT ditor" : s === "I INSIDE" ? "Inside day" :
+  s === "DISPLACEMENT" ? "Displacement" : s === "BB PULLBACK" ? "BB pullback" : s === "CCI PULLBACK" ? "CCI pullback" : s;
+const CANDLE = { "1AM": 1, "5AM": 5, "9AM": 9, "1PM": 13, "5PM": 17, "9PM": 21 };
+
+// ---- bars (M15, server time, delta encoded) -------------------------------
+const B = DATA.bars, NB = B.length / 5;
+const T = new Float64Array(NB), O = new Float64Array(NB), Hh = new Float64Array(NB), L = new Float64Array(NB), C = new Float64Array(NB);
+{ let t = 0, pc = 0;
+  for (let i = 0; i < NB; i++) {
+    t += B[5 * i]; const o = pc + B[5 * i + 1];
+    T[i] = t * 60; O[i] = o / 100; Hh[i] = (o + B[5 * i + 2]) / 100; L[i] = (o + B[5 * i + 3]) / 100;
+    const c = o + B[5 * i + 4]; C[i] = c / 100; pc = c;
+  } }
+const lb = t => { let a = 0, b = NB; while (a < b) { const m = (a + b) >> 1; if (T[m] < t) a = m + 1; else b = m; } return a; };
+
+function window_(t0, t1, tf) {
+  const sec = tf * 60, out = [];
+  for (let i = lb(t0); i < NB && T[i] <= t1; i++) {
+    const k = T[i] - T[i] % sec, last = out[out.length - 1];
+    if (last && last.t === k) { last.h = Math.max(last.h, Hh[i]); last.l = Math.min(last.l, L[i]); last.c = C[i]; }
+    else out.push({ t: k, o: O[i], h: Hh[i], l: L[i], c: C[i] });
+  }
+  return out;
+}
+
+// ---- formatting ---------------------------------------------------------------
+const p2 = v => v.toFixed(2);
+const pad = n => String(n).padStart(2, "0");
+const fmt = (t, withDate = true) => { const d = new Date(t * 1000);
+  return (withDate ? `${d.getUTCFullYear()}.${pad(d.getUTCMonth() + 1)}.${pad(d.getUTCDate())} ` : "") + `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`; };
+const rTxt = r => (r > 0 ? "+" : "") + r.toFixed(2) + "R";
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function stat(xs) {
+  let w = 0, l = 0, won = 0;
+  for (const x of xs) { if (x.R > 0) { w += x.R; won++; } else l -= x.R; }
+  return { n: xs.length, win: xs.length ? 100 * won / xs.length : 0, pf: l ? w / l : 0, tot: w - l };
+}
+
+// ---- strategy table ---------------------------------------------------------------
+const TR = DATA.trades;
+{
+  const groups = ["CRT H4", "CRT ditor", "Inside day", "Displacement", "BB pullback", "CCI pullback"];
+  const years = [...new Set(TR.map(t => fmt(t.t).slice(0, 4)))].sort();
+  let h = `<thead><tr><th>Strategjia</th><th>Trade</th><th>Fitore</th><th>PF</th><th>Totali</th>${years.map(y => `<th>${y}</th>`).join("")}</tr></thead><tbody>`;
+  for (const g of groups) {
+    const xs = TR.filter(t => GROUP(t.s) === g); if (!xs.length) continue;
+    const s = stat(xs);
+    h += `<tr><td>${g}</td><td class="num">${s.n}</td><td class="num">${s.win.toFixed(1)}%</td><td class="num">${s.pf.toFixed(2)}</td>` +
+      `<td class="num">${rTxt(s.tot).replace("R", " R")}</td>` +
+      years.map(y => { const z = stat(xs.filter(t => fmt(t.t).startsWith(y))); return `<td class="num">${z.n ? rTxt(z.tot).replace("R", " R") : "-"}</td>`; }).join("") + `</tr>`;
+  }
+  const s = stat(TR);
+  h += `</tbody><tfoot><tr><td>Te gjitha</td><td class="num">${s.n}</td><td class="num">${s.win.toFixed(1)}%</td><td class="num">${s.pf.toFixed(2)}</td><td class="num">${rTxt(s.tot).replace("R", " R")}</td>` +
+    years.map(y => { const z = stat(TR.filter(t => fmt(t.t).startsWith(y))); return `<td class="num">${rTxt(z.tot).replace("R", " R")}</td>`; }).join("") + `</tr></tfoot>`;
+  document.getElementById("stab").innerHTML = h;
+  document.getElementById("period").textContent =
+    `${fmt(TR[0].t, true).slice(0, 10)} - ${fmt(TR[TR.length - 1].t, true).slice(0, 10)}  |  ${TR.length} trade nga ditari i MT5  |  koha e serverit (NY + 7h)`;
+  const fs = document.getElementById("fStrat");
+  fs.innerHTML = `<option value="all">Te gjitha</option>` + groups.map(g => `<option>${g}</option>`).join("") +
+    Object.keys(CANDLE).map(c => `<option value="CRT ${c}">CRT H4 ${c}</option>`).join("");
+  document.getElementById("fYear").innerHTML = `<option value="all">Te gjithe</option>` + years.map(y => `<option>${y}</option>`).join("");
+}
+
+// ---- list + filters ---------------------------------------------------------------
+let shown = [], cur = 0, tf = 15;
+const $ = id => document.getElementById(id);
+function applyFilters() {
+  const st = $("fStrat").value, rs = $("fRes").value, dr = +$("fDir").value, yr = $("fYear").value;
+  shown = TR.filter(t => (st === "all" || GROUP(t.s) === st || t.s === st) &&
+    (rs === "all" || (rs === "w" ? t.R > 0 : rs === "l" ? t.R <= 0 : t.k === rs)) &&
+    (!dr || t.d === dr) && (yr === "all" || fmt(t.t).startsWith(yr)));
+  const s = stat(shown);
+  $("fsum").innerHTML = `<span><b>${s.n}</b> trade</span><span>fitore <b>${s.win.toFixed(1)}%</b></span>` +
+    `<span>PF <b>${s.pf.toFixed(2)}</b></span><span>totali <b>${rTxt(s.tot)}</b></span>`;
+  $("rows").innerHTML = shown.map((t, i) =>
+    `<div class="row" role="option" tabindex="-1" data-i="${i}"><span class="n num">#${t.nr}</span>` +
+    `<span class="what">${esc(t.s)} <span class="side ${t.d > 0 ? "b" : "s"}">${t.d > 0 ? "BUY" : "SELL"}</span>` +
+    `<small class="num">${fmt(t.t)} · ${t.out}</small></span><span class="pill ${t.R > 0 ? "w" : "l"}">${rTxt(t.R)}</span></div>`).join("");
+  select(0);
+}
+function select(i) {
+  if (!shown.length) { $("ttl").textContent = "Asnje trade me keto filtra"; $("detail").innerHTML = ""; draw(); return; }
+  cur = Math.max(0, Math.min(shown.length - 1, i));
+  document.querySelectorAll(".row.on").forEach(r => r.classList.remove("on"));
+  const row = $("rows").querySelector(`[data-i="${cur}"]`);
+  if (row) { row.classList.add("on"); row.scrollIntoView({ block: "nearest" }); }
+  const t = shown[cur];
+  tf = t.s.startsWith("CRT ") ? 15 : 60;
+  setTfButtons();
+  $("ttl").innerHTML = `#${t.nr} · ${esc(t.s)} <span class="side ${t.d > 0 ? "b" : "s"}">${t.d > 0 ? "BUY" : "SELL"}</span>` +
+    `<small>${t.day}, ${t.ny} NY</small>`;
+  const dur = t.m >= 120 ? (t.m / 60).toFixed(1) + " ore" : t.m + " min";
+  const why = (t.why || "").split(" | ").filter(Boolean);
+  $("detail").innerHTML =
+    `<div class="kv">` +
+    [["Rezultati", `<span class="pill ${t.R > 0 ? "w" : "l"}">${rTxt(t.R)}</span>`], ["Dalja", t.out], ["Hyrja", p2(t.e)], ["SL", p2(t.sl)],
+     ["TP", t.tp > 0 ? p2(t.tp) : "sinjal"], ["Dalja ne", p2(t.x)], ["Rreziku", p2(t.risk) + " $"], ["Kohezgjatja", dur],
+     ["Max ne favor", rTxt(t.mfe)], ["Max kunder", rTxt(t.mae)], ["Trendi", (t.tr > 0 ? "+" : "") + t.tr.toFixed(2) + "%"], ["Pozicioni", t.pos || "-"]]
+      .map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("") + `</div>` +
+    `<div class="why"><h3>Pse hyri (analiza e EA-se)</h3><ul>${why.map(w => `<li>${esc(w.replace(/;/g, ","))}</li>`).join("") || "<li>-</li>"}</ul></div>` +
+    `<div class="how"><h3>Si mbaroi</h3><p><b>${t.k}</b> · ${KIND[t.k] || ""}. ${esc(t.desc)}</p></div>`;
+  draw();
+}
+function setTfButtons() { document.querySelectorAll(".tf").forEach(b => b.classList.toggle("on", +b.dataset.tf === tf)); }
+
+// ---- chart ---------------------------------------------------------------
+const cv = $("cv"), ctx = cv.getContext("2d");
+let geo = null;
+function css(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function setup(t) {
+  // CRT candle and its time-based range (server time)
+  let rs = 0, ce = 0;
+  const m = t.s.match(/^CRT (\d+[AP]M)$/);
+  const ny = t.t - NY;
+  if (m) { const h = CANDLE[m[1]]; const st = Math.floor((ny - h * 3600) / 86400) * 86400 + h * 3600 + NY; ce = st + 4 * 3600; rs = st - (h === 1 ? 2 : 1) * 4 * 3600; }
+  else if (t.s === "D D1") { const st = Math.floor((ny - 17 * 3600) / 86400) * 86400 + 17 * 3600 + NY; ce = st + 86400; rs = st - 86400; }
+  else if (t.s === "I INSIDE") { const st = Math.floor(t.t / 86400) * 86400; rs = st - 86400; ce = st + 86400; }
+  return { rs, ce };
+}
+function draw() {
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const t = shown[cur]; if (!t) return;
+  const { rs, ce } = setup(t);
+  const tx = t.t + t.m * 60, sec = tf * 60;
+  const before = tf === 15 ? 10 * 3600 : tf === 60 ? 2 * 86400 : 6 * 86400, after = tf === 15 ? 5 * 3600 : tf === 60 ? 18 * 3600 : 3 * 86400;
+  const bars = window_(Math.min(rs || t.t, t.t) - before, tx + after, tf);
+  if (!bars.length) return;
+  const fontNum = getComputedStyle(document.body).getPropertyValue("--font-num") || "monospace";
+  const pl = 6, pr = W - 88, pt = 8, pb = H - 22;
+  let lo = Infinity, hi = -Infinity;
+  for (const b of bars) { lo = Math.min(lo, b.l); hi = Math.max(hi, b.h); }
+  for (const v of [t.sl, t.tp, t.e, t.lo, t.hi, t.sw]) if (v > 0) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  const padv = (hi - lo) * 0.06; lo -= padv; hi += padv;
+  const bw = (pr - pl) / bars.length;
+  const y = v => pt + (hi - v) / (hi - lo) * (pb - pt);
+  const xi = i => pl + (i + 0.5) * bw;
+  const xt = tt => { let a = 0, b = bars.length; while (a < b) { const mm = (a + b) >> 1; if (bars[mm].t <= tt) a = mm + 1; else b = mm; }
+    const i = a - 1; if (i < 0) return pl; const frac = Math.min(1, (tt - bars[i].t) / sec); return pl + (i + frac) * bw; };
+  geo = { bars, xt, y, bw, pl, pr, lo, hi, pt, pb };
+  const c = { grid: css("--grid"), muted: css("--muted"), up: css("--up"), down: css("--down"), upS: css("--up-soft"), downS: css("--down-soft"),
+    range: css("--range"), rangeL: css("--range-line"), acc: css("--accent"), fg: css("--fg"), panel: css("--panel") };
+  // grid + price axis
+  const step = niceStep((hi - lo) / 6);
+  ctx.font = `11px ${fontNum}`; ctx.textBaseline = "middle";
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    ctx.strokeStyle = c.grid; ctx.beginPath(); ctx.moveTo(pl, y(v)); ctx.lineTo(pr, y(v)); ctx.stroke();
+    ctx.fillStyle = c.muted; ctx.fillText(v.toFixed(step < 1 ? 2 : 0), pr + 6, y(v));
+  }
+  // time axis: day boundaries
+  ctx.textBaseline = "alphabetic";
+  let lastLabelX = -1e9;
+  for (let i = 1; i < bars.length; i++) {
+    const dPrev = Math.floor(bars[i - 1].t / 86400), d = Math.floor(bars[i].t / 86400);
+    const newDay = d !== dPrev, x = pl + i * bw;
+    if (newDay) { ctx.strokeStyle = c.grid; ctx.beginPath(); ctx.moveTo(x, pt); ctx.lineTo(x, pb); ctx.stroke(); }
+    if ((newDay || (tf === 15 && bars[i].t % (4 * 3600) === 0)) && x - lastLabelX > 70) {
+      ctx.fillStyle = c.muted; ctx.fillText(newDay ? fmt(bars[i].t).slice(5, 10) : fmt(bars[i].t, false), x + 3, H - 6); lastLabelX = x;
+    }
+  }
+  // time-based range
+  if (rs && t.hi > 0) {
+    const x0 = xt(rs), x1 = xt(ce);
+    ctx.fillStyle = c.range; ctx.fillRect(x0, y(t.hi), x1 - x0, y(t.lo) - y(t.hi));
+    ctx.strokeStyle = c.rangeL; ctx.lineWidth = 1; ctx.strokeRect(x0, y(t.hi), x1 - x0, y(t.lo) - y(t.hi));
+    const xc = xt(ce - (t.s === "D D1" || t.s === "I INSIDE" ? 86400 : 4 * 3600));
+    ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(xc, y(t.hi)); ctx.lineTo(xc, y(t.lo)); ctx.stroke(); ctx.setLineDash([]);
+  }
+  // position boxes
+  const xe = xt(t.t), xx = Math.max(xt(tx), xe + 3);
+  ctx.fillStyle = c.downS; ctx.fillRect(xe, Math.min(y(t.e), y(t.sl)), xx - xe, Math.abs(y(t.sl) - y(t.e)));
+  if (t.tp > 0) { ctx.fillStyle = c.upS; ctx.fillRect(xe, Math.min(y(t.e), y(t.tp)), xx - xe, Math.abs(y(t.tp) - y(t.e))); }
+  // candles
+  const cw = Math.max(1, Math.min(9, bw * 0.66));
+  bars.forEach((b, i) => {
+    const up = b.c >= b.o, x = xi(i);
+    ctx.strokeStyle = up ? c.up : c.down; ctx.fillStyle = up ? c.up : c.down; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(Math.round(x) + 0.5, y(b.h)); ctx.lineTo(Math.round(x) + 0.5, y(b.l)); ctx.stroke();
+    const yo = y(b.o), yc = y(b.c); ctx.fillRect(x - cw / 2, Math.min(yo, yc), cw, Math.max(1, Math.abs(yc - yo)));
+  });
+  // sweep
+  if (t.sw > 0 && t.hi > 0) {
+    ctx.strokeStyle = c.acc; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(xt(rs || t.t - 4 * 3600), y(t.sw)); ctx.lineTo(xx, y(t.sw)); ctx.stroke(); ctx.setLineDash([]);
+  }
+  // levels
+  const lvl = (v, col, txt) => { if (!(v > 0)) return; ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(xe, y(v)); ctx.lineTo(xx, y(v)); ctx.stroke();
+    ctx.fillStyle = col; ctx.fillRect(pr + 1, y(v) - 8, W - pr - 1, 16); ctx.fillStyle = c.panel; ctx.textBaseline = "middle"; ctx.fillText(`${txt} ${v.toFixed(2)}`, pr + 4, y(v)); };
+  lvl(t.sl, c.down, "SL"); lvl(t.tp, c.up, "TP"); lvl(t.e, c.fg, "IN");
+  // entry -> exit
+  ctx.strokeStyle = t.R > 0 ? c.up : c.down; ctx.lineWidth = 2; ctx.setLineDash([2, 3]);
+  ctx.beginPath(); ctx.moveTo(xe, y(t.e)); ctx.lineTo(xx, y(t.x)); ctx.stroke(); ctx.setLineDash([]);
+  // markers
+  ctx.fillStyle = t.d > 0 ? c.up : c.down;
+  ctx.beginPath(); const ye = y(t.e);
+  if (t.d > 0) { ctx.moveTo(xe, ye + 2); ctx.lineTo(xe - 6, ye + 12); ctx.lineTo(xe + 6, ye + 12); } else { ctx.moveTo(xe, ye - 2); ctx.lineTo(xe - 6, ye - 12); ctx.lineTo(xe + 6, ye - 12); }
+  ctx.fill();
+  ctx.beginPath(); ctx.arc(xx, y(t.x), 4.5, 0, Math.PI * 2); ctx.fillStyle = t.R > 0 ? c.up : c.down; ctx.fill();
+  ctx.font = `600 12px ${fontNum}`; ctx.textBaseline = "bottom";
+  const lab = `${t.out} ${rTxt(t.R)}`; const lw = ctx.measureText(lab).width;
+  ctx.fillText(lab, Math.min(xx + 7, pr - lw - 2), y(t.x) - 6);
+}
+function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw))); const f = raw / p; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p; }
+
+cv.addEventListener("mousemove", e => {
+  if (!geo) return; const r = cv.getBoundingClientRect(); const i = Math.floor((e.clientX - r.left - geo.pl) / geo.bw);
+  const b = geo.bars[i]; if (!b) { $("readout").textContent = ""; return; }
+  $("readout").textContent = `${fmt(b.t)}  O ${p2(b.o)}  H ${p2(b.h)}  L ${p2(b.l)}  C ${p2(b.c)}`;
+});
+cv.addEventListener("mouseleave", () => { $("readout").textContent = ""; });
+$("rows").addEventListener("click", e => { const r = e.target.closest(".row"); if (r) select(+r.dataset.i); });
+$("prev").addEventListener("click", () => select(cur - 1));
+$("next").addEventListener("click", () => select(cur + 1));
+document.querySelectorAll(".tf").forEach(b => b.addEventListener("click", () => { tf = +b.dataset.tf; setTfButtons(); draw(); }));
+["fStrat", "fRes", "fDir", "fYear"].forEach(id => $(id).addEventListener("change", applyFilters));
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+  if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); select(cur + 1); }
+  if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); select(cur - 1); }
+});
+window.addEventListener("resize", draw);
+try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw); } catch (_) {}
+new MutationObserver(draw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+applyFilters();
+</script>

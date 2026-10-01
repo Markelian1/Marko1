@@ -222,10 +222,22 @@ me shumë pak trade (~20 në vit) për ta konsideruar të provuar. Avantazhi i q
 
 # GOLD MULTI PRO (MT5): EA e re me 6 strategji dhe analizë për çdo trade
 
-Skedari: `Experts/GOLD_MULTI_PRO.mq5` (v1.01), magic bazë **880100**.
+Skedari: `Experts/GOLD_MULTI_PRO.mq5` (v1.02), magic bazë **880100**.
 
 **Testi MT5 i v1.00** (2023.01.01–2026.09.26, 0.1%): 1576 trade, PF 1.31, **+27.4%**, DD **1.87%**
 (simulimi priste 1578 trade, +25.5%, DD 2.02%).
+
+### v1.02: fotot ruhen pranë ditarit, dhe pamja e trade-ve
+
+- Në v1.01 fotot u krijuan (ditari ka emrin e çdo fotoje), por MT5 në tester i ruajti në dosjen e agjentit:
+  `%APPDATA%\MetaQuotes\Tester\<ID>\Agent-127.0.0.1-3000\MQL5\Files\GOLD_MULTI_PRO_shots`.
+  Në v1.02 çdo foto kopjohet menjëherë te `Common\Files\GOLD_MULTI_PRO_shots`, pra pranë `GOLD_MULTI_PRO_journal.csv`.
+- `backtest/trade_viewer.py` ndërton nga ditari një faqe HTML. Faqja vizaton çdo trade mbi historikun M15:
+  qirinjtë, range-in e kohës, sweep-in, hyrjen, SL, TP, daljen dhe arsyen e EA-së. Ka filtra sipas
+  strategjisë, rezultatit, drejtimit dhe vitit.
+
+  `python3 trade_viewer.py ../reports/gold_multi_pro_mt5_journal.csv trades.html`
+- Ditari MT5 i testit 2023–2026: `reports/gold_multi_pro_mt5_journal.csv`.
 
 ### v1.01: foto të çdo trade-i dhe pse blen kur range-i shkon poshtë
 
