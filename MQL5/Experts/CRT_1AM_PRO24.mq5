@@ -37,6 +37,11 @@
 //     liquidity a sweep is often the start of a move, not a reversal.
 //     It is still used as part of the 1AM range. The other five
 //     candles still trade at any time of their 4 hours.
+//   - v1.08, low drawdown: risk 0.1% per trade (was 0.5%), daily loss
+//     limit 0.3%, and a max drawdown stop (InpMaxDDPct, 3.5%): when
+//     equity falls that far below its peak, the EA closes its trades and
+//     stops until restarted with InpResetDDStop = true. 2020-2026
+//     simulation at 0.1%: max DD 2.3%, about +3.4% a year.
 //   - daily trend bias (previous close vs its 50-day average) and
 //     premium / discount of the range
 //   - SL beyond the sweep, TP 1:2, trade closed after 8 hours if still open
@@ -46,7 +51,9 @@
 //     against (in R) and a short description of the win or loss
 //
 // Tested on FP Trading XAUUSD 2023.01-2026.09 (simulation, 0.5% risk):
-//   v1.07 defaults: ~900 trades, PF 1.30, +106%, max DD 11%, 513 losses
+//   v1.08 defaults (0.1% risk): ~900 trades, PF 1.30, about +3.4% a year,
+//   max DD 2.3% (2020-2026)
+//   v1.07 (0.5% risk): ~900 trades, PF 1.30, +106%, max DD 11%, 513 losses
 //   v1.06 same simulation: ~1150 trades, PF 1.22, +101%, max DD 10%, 678 losses
 //   v1.06 in MT5: 1201 trades, PF 1.25, +129%, max DD 11.2%
 //   v1.05 in MT5: 1134 trades, PF 1.24, +114%, max DD 9.5%
@@ -57,7 +64,7 @@
 //   v1.01 (one position, market): 1226 trades, PF 1.17, +71%, max DD 11.1%
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.07"
+#property version   "1.08"
 #property description "CRT PRO24: the CRT_1AM_EA setup in every H4 candle, 24 hours, no fixed hours."
 
 #include <Trade/Trade.mqh>
@@ -141,7 +148,7 @@ input ENUM_CRT_ENTRY InpEntryType  = ENTRY_RETEST; // Entry
 input int            InpRetestHours = 4;            // Retest: how long to wait for price to come back (hours)
 
 input group "3. RISK / EXIT"
-input double InpRiskPercent  = 0.5;    // Risk per trade (% of balance)
+input double InpRiskPercent  = 0.1;    // Risk per trade (% of balance)
 input double InpMaxLots      = 5.0;    // Max lots per trade (safety cap)
 input ENUM_CRT_TP InpTPMode   = TP_RR;  // Take profit
 input double InpRR           = 2.0;    // Reward:risk (TP = fixed RR)
@@ -150,7 +157,9 @@ input double InpSLBuffer     = 0.30;   // SL buffer beyond the sweep (price unit
 input int    InpMaxHoldHours = 8;      // Close a trade after this many hours (0 = off)
 input int    InpMaxTradesDay = 5;      // Max trades per day (one position at a time)
 input int    InpFridayClose  = 1600;   // Friday: close trades at (HHMM NY), no new trades 4h before (0 = off)
-input double InpDailyLossPct = 1.5;    // Daily loss limit: no new trades after losing this % in a NY day (0 = off)
+input double InpDailyLossPct = 0.3;    // Daily loss limit: no new trades after losing this % in a NY day (0 = off)
+input double InpMaxDDPct     = 3.5;    // Max drawdown: close all and stop when equity is this % below its peak (0 = off)
+input bool   InpResetDDStop  = false;  // Restart after a max-drawdown stop (the peak becomes the current equity)
 input ulong  InpMagic        = 770100; // Magic number (different from CRT_1AM_EA)
 
 input group "4. COST FILTERS"
@@ -258,6 +267,11 @@ bool      g_ready     = false;
 bool      g_silent    = false;
 bool      g_noChart   = false;
 string    g_lastSkip  = "-";
+bool      g_ddStopped = false;   // max drawdown reached: no trading until reset
+double    g_eqPeak    = 0.0;     // highest equity seen (persisted in a terminal global variable)
+string    g_gvPeak    = "";
+string    g_gvStop    = "";
+datetime  g_ddPanel   = 0;       // last panel refresh while stopped
 
 // Funnel: how many CRT candles, sweeps and order-block breaks there were
 // and why the signals were not traded.
@@ -1139,10 +1153,96 @@ void RemoveRisk(int i)
    ArrayResize(g_risk, n - 1);
 }
 
+// ============================================================================
+// MAX DRAWDOWN STOP
+// Equity is compared with its highest value. At InpMaxDDPct below it the EA
+// closes its positions, drops its retest orders and stops trading until it
+// is restarted with InpResetDDStop = true. Outside the tester the peak and
+// the stop survive a terminal restart (terminal global variables).
+// ============================================================================
+
+void DDInit()
+{
+   g_ddStopped = false;
+   g_eqPeak    = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(InpMaxDDPct <= 0.0 || MQLInfoInteger(MQL_TESTER))
+      return;
+   string base = "CRT24_" + _Symbol + "_" + IntegerToString((long)InpMagic);
+   g_gvPeak = base + "_peak";
+   g_gvStop = base + "_ddstop";
+   if(InpResetDDStop)
+   {
+      GlobalVariableDel(g_gvStop);
+      GlobalVariableSet(g_gvPeak, g_eqPeak);
+      Log(StringFormat("MAX DD: stop reset, peak = equity %.2f. Set InpResetDDStop back to false.", g_eqPeak));
+      return;
+   }
+   if(GlobalVariableCheck(g_gvPeak))
+      g_eqPeak = MathMax(g_eqPeak, GlobalVariableGet(g_gvPeak));
+   else
+      GlobalVariableSet(g_gvPeak, g_eqPeak);
+   if(GlobalVariableCheck(g_gvStop))
+   {
+      g_ddStopped = true;
+      Log("MAX DD: the EA was stopped by the max drawdown limit. Restart it with InpResetDDStop = true.");
+   }
+}
+
+// Closes this EA's positions on this symbol; returns how many could not be closed.
+int CloseAllMine()
+{
+   int left = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || PositionGetString(POSITION_SYMBOL) != _Symbol)
+         continue;
+      if(SlotOf((ulong)PositionGetInteger(POSITION_MAGIC)) < 0)
+         continue;
+      g_trade.SetExpertMagicNumber((ulong)PositionGetInteger(POSITION_MAGIC));
+      if(!g_trade.PositionClose(ticket))
+         left++;
+   }
+   return left;
+}
+
+// True while the EA is stopped by the max drawdown limit.
+bool DDCheck()
+{
+   if(InpMaxDDPct <= 0.0)
+      return false;
+   if(!g_ddStopped)
+   {
+      double eq = AccountInfoDouble(ACCOUNT_EQUITY);
+      if(eq > g_eqPeak)
+      {
+         if(g_gvPeak != "" && eq > g_eqPeak * 1.0001)
+            GlobalVariableSet(g_gvPeak, eq);
+         g_eqPeak = eq;
+      }
+      if(g_eqPeak <= 0.0 || eq > g_eqPeak * (1.0 - InpMaxDDPct / 100.0))
+         return false;
+      g_ddStopped = true;
+      if(g_gvStop != "")
+         GlobalVariableSet(g_gvStop, (double)TimeCurrent());
+      for(int k = 0; k < SLOTS; k++)
+         for(int m = 0; m < MODELS; m++)
+            g_pend[k][m].on = false;
+      g_lastSkip = "max drawdown stop";
+      Log(StringFormat("MAX DD: equity %.2f is %.2f%% below its peak %.2f (limit %.1f%%). Closing all and stopping. Restart with InpResetDDStop = true.",
+                       eq, 100.0 * (1.0 - eq / g_eqPeak), g_eqPeak, InpMaxDDPct));
+   }
+   CloseAllMine();   // again on later ticks if a close failed
+   return true;
+}
+
 void PrintTradeSummary()
 {
    Print("CRT PRO24 FUNNEL: " + FunnelText());
    Print("CRT PRO24 REJECTED: " + RejectText());
+   if(InpMaxDDPct > 0.0)
+      Print(StringFormat("CRT PRO24 MAX DD STOP (%.1f%%): %s", InpMaxDDPct,
+                         g_ddStopped ? "TRIGGERED, the EA stopped trading" : "not reached"));
    if(g_slot[0].retest)
       Print(StringFormat("CRT PRO24 RETEST: placed %d | filled %d | expired %d | cancelled (new extreme) %d",
                          g_rtPlaced, g_rtFilled, g_rtExpired, g_rtInvalid));
@@ -1456,9 +1556,13 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "CRT PRO24 v1.07  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
+   string s = "CRT PRO24 v1.08  |  " + _Symbol + "  |  " +
+              (g_ddStopped ? "STOPPED: MAX DRAWDOWN (restart with InpResetDDStop = true)" : InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
+   if(InpMaxDDPct > 0.0 && g_eqPeak > 0.0)
+      s += StringFormat("\nDrawdown %.2f%% of max %.1f%%  (equity peak %.2f)",
+                        100.0 * (1.0 - AccountInfoDouble(ACCOUNT_EQUITY) / g_eqPeak), InpMaxDDPct, g_eqPeak);
    s += "\n" + FunnelText() + "\nRejected: " + RejectText();
    for(int k = 0; k < SLOTS; k++)
       for(int m = 0; m < MODELS; m++)
@@ -1531,7 +1635,7 @@ int OnInit()
 {
    if(InpNYOffset < -12 || InpNYOffset > 14 || InpRiskPercent <= 0.0 || InpRiskPercent > 10.0 ||
       !ValidHHMM(InpFridayClose) || InpMaxHoldHours < 0 || InpMaxTradesDay < 0 || InpRetestHours < 1 ||
-      InpDailyLossPct < 0.0)
+      InpDailyLossPct < 0.0 || InpMaxDDPct < 0.0 || InpMaxDDPct >= 100.0)
    {
       Print("Invalid inputs");
       return INIT_PARAMETERS_INCORRECT;
@@ -1589,11 +1693,11 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += g_mName[m] + " ";
-      Log(StringFormat("CRT PRO24 v1.07 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("CRT PRO24 v1.08 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
-   Log(StringFormat("CRT PRO24 v1.07 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+   Log(StringFormat("CRT PRO24 v1.08 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 
@@ -1604,6 +1708,7 @@ int OnInit()
    ArrayResize(g_jr, 0);
    g_jCount = 0;
    JournalStart();
+   DDInit();
 
    g_ready = D1Update();
    for(int k = 0; k < SLOTS; k++)
@@ -1631,6 +1736,15 @@ void OnTick()
    }
 
    JournalTrack();
+   if(DDCheck())
+   {
+      if(TimeCurrent() - g_ddPanel >= 60)
+      {
+         g_ddPanel = TimeCurrent();
+         UpdatePanel();
+      }
+      return;
+   }
    CloseAtExitTime();
 
    // Everything else runs once per closed entry-TF bar of each slot.

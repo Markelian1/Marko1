@@ -222,7 +222,7 @@ me shumë pak trade (~20 në vit) për ta konsideruar të provuar. Avantazhi i q
 
 # CRT PRO24 (MT5): versioni 24 orë, pa orare fikse
 
-Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.07). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
+Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.08). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
 
 - Ndjek **të 6 qirinjtë H4** të ditës (1AM, 5AM, 9AM, 1PM, 5PM, 9PM New York).
 - Hyn **kur vjen setup-i**, në çfarëdo ore: sweep i range-it, pastaj një qiri M15 mbyllet përtej qiririt
@@ -256,6 +256,31 @@ U mbajt varianti më i thjeshtë dhe më i qëndrueshëm.
 PRO24 është pozitiv çdo vit (2023 +44R, 2024 +15R, 2025 +42R, 2026 +11R). Ka më shumë trade,
 por më pak fitim për trade dhe rreth dyfish më shumë drawdown se versioni me orare.
 Për të njëjtin drawdown si Combined, përdor rreth **0.3%** rrezik.
+
+### v1.08: drawdown i ulët dhe ndalim automatik
+
+Drawdown-i varet nga rreziku për trade; raporti fitim/drawdown është veti e strategjisë.
+Një DD 0.01% nuk arrihet: edhe me lotin minimal 0.01, seria më e keqe e humbjeve (2020–26) ishte 140$,
+pra 0.14% e 100,000$.
+
+| Rreziku (v1.07, 2020.04–2026.09) | Max DD | Fitimi në vit |
+|---|---|---|
+| 0.5% | 11.2% | +24.8% |
+| 0.3% | 6.8% | +12.2% |
+| 0.2% | 4.6% | +7.4% |
+| **0.1% (v1.08)** | **2.3%** | **+3.4%** |
+| 0.05% | 1.2% | +1.6% |
+
+Cilësimet e reja:
+- `InpRiskPercent = 0.1`; në 2023.01–2026.09 jep +16% me DD maksimal 2.3%.
+- `InpDailyLossPct = 0.3`: kufiri ditor mbetet rreth 3 humbje, si më parë.
+- `InpMaxDDPct = 3.5` (**ndalimi automatik**): kur ekuiteti bie 3.5% nën majën e tij, EA mbyll trade-t,
+  heq retest-et dhe ndalon. Drawdown-i normal pritet rreth 2.3–2.8%; 3.5% është tavani i fortë.
+- Pas ndalimit, rinise me `InpResetDDStop = true` (maja bëhet ekuiteti aktual), pastaj ktheje në `false`.
+- Jashtë testerit, maja dhe ndalimi ruhen në Global Variables të terminalit (F3), ndaj mbeten edhe pas rinisjes së MT5.
+- Ekuiteti është ai i gjithë llogarisë. Pas një tërheqjeje parash, rinise me `InpResetDDStop = true`.
+- Me 0.1%, trade-t me SL shumë të madh për llogari të vogla bien nën lotin minimal dhe nuk hapen
+  (për 10,000$ rreth 15% e trade-ve; për 100,000$ pothuajse asnjë).
 
 ### v1.07: pa setup-et e Asias (qiriri 9PM)
 
