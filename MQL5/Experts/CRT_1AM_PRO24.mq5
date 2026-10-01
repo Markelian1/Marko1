@@ -19,6 +19,9 @@
 //     is still running), a new setup in the same candle after a trade
 //     closes, and optionally the PDF Selective model (key times, M30,
 //     market entry) as a second strategy with magic +10
+//   - v1.04: no trading by the clock; Selective (fixed key times) is off
+//     by default. The only clock rule left is the Friday close
+//     (InpFridayClose, 0 = off), which protects against weekend gaps
 //   - daily trend bias (previous close vs its 50-day average) and
 //     premium / discount of the range
 //   - SL beyond the sweep, TP 1:2, trade closed after 8 hours if still open
@@ -28,13 +31,14 @@
 //     against (in R) and a short description of the win or loss
 //
 // Tested on FP Trading XAUUSD 2023.01-2026.09 (simulation, 0.5% risk):
-//   v1.03 defaults (per candle + re-entry + Selective): ~1120 trades,
-//   PF 1.32, +161%, max DD 8.6%, up to 3 positions open at once
+//   v1.04 defaults (per candle + re-entry, no Selective): ~1080 trades,
+//   PF 1.28, +131%, max DD 8.6%, up to 2 positions open at once
+//   with Selective: ~1120 trades, PF 1.32, +161%, max DD 8.6%
 //   v1.02 (one position, retest): 922 trades, PF 1.29, +107%, max DD 9.8%
 //   v1.01 (one position, market): 1226 trades, PF 1.17, +71%, max DD 11.1%
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.03"
+#property version   "1.04"
 #property description "CRT PRO24: the CRT_1AM_EA setup in every H4 candle, 24 hours, no fixed hours."
 
 #include <Trade/Trade.mqh>
@@ -105,7 +109,7 @@ input int  InpNYOffset     = 7;     // Server time minus New York time (hours)
 input ENUM_TIMEFRAMES InpEntryTF = PERIOD_M15; // Entry / order-block timeframe (M5, M15, M30)
 input bool InpPerCandle    = true;  // One position per H4 candle (more entries, several trades open)
 input bool InpReentry      = true;  // New setup in the same candle after a trade closes
-input bool InpAddSelective = true;  // Also trade the PDF Selective model (key times, M30, magic +10)
+input bool InpAddSelective = false; // Also trade the PDF Selective model (has fixed key times; magic +10)
 
 input group "2. BIAS / PREMIUM-DISCOUNT"
 input ENUM_CRT_BIAS InpBias     = BIAS_TREND;      // Higher-timeframe bias
@@ -1385,7 +1389,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "CRT PRO24 v1.03  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
+   string s = "CRT PRO24 v1.04  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
    s += "\n" + FunnelText() + "\nRejected: " + RejectText();
@@ -1517,11 +1521,11 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += g_mName[m] + " ";
-      Log(StringFormat("CRT PRO24 v1.03 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("CRT PRO24 v1.04 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
-   Log(StringFormat("CRT PRO24 v1.03 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+   Log(StringFormat("CRT PRO24 v1.04 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 

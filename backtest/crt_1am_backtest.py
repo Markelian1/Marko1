@@ -56,9 +56,10 @@ ANYTIME = dict(ACTIVE, skip_hours=(), models={n: None for n in MODELS})
 PRO24 = dict(ANYTIME, entry="retest", retest_sec=4 * 3600)
 
 
-def pro24_set(per_candle=True, reentry=True, selective=True):
-    """CRT_1AM_PRO24 v1.03 as a list of independent runs: one position per
-    H4 candle (each candle its own run), re-entry, plus the Selective model."""
+def pro24_set(per_candle=True, reentry=True, selective=False):
+    """CRT_1AM_PRO24 v1.04 as a list of independent runs: one position per
+    H4 candle (each candle its own run), re-entry, optionally the Selective
+    model (off by default: it trades fixed key times)."""
     base = dict(PRO24, reentry=reentry)
     cfgs = [dict(base, models={n: None}) for n in MODELS] if per_candle else [base]
     if selective:

@@ -191,7 +191,7 @@ hyrja te thyerja e OB në M15, brenda strukturës kohore H4, në drejtimin e tre
 
 # CRT PRO24 (MT5): versioni 24 orë, pa orare fikse
 
-Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.03). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
+Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.04). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
 
 - Ndjek **të 6 qirinjtë H4** të ditës (1AM, 5AM, 9AM, 1PM, 5PM, 9PM New York).
 - Hyn **kur vjen setup-i**, në çfarëdo ore: sweep i range-it, pastaj një qiri M15 mbyllet përtej qiririt
@@ -226,6 +226,20 @@ PRO24 është pozitiv çdo vit (2023 +44R, 2024 +15R, 2025 +42R, 2026 +11R). Ka 
 por më pak fitim për trade dhe rreth dyfish më shumë drawdown se versioni me orare.
 Për të njëjtin drawdown si Combined, përdor rreth **0.3%** rrezik.
 
+### v1.04: pa tregtim me orar
+
+`InpAddSelective = false` si vlerë fillestare: PRO24 nuk ka më asnjë hyrje me key time.
+Rregulli i vetëm me orë që mbetet është **mbyllja e së premtes** në 16:00 NY (`InpFridayClose`).
+Ajo nuk zgjedh kur hyhet; vetëm mbyll trade-t para fundjavës dhe nuk hap të reja në 4 orët e fundit.
+
+| 2023.01–2026.09, 0.5% rrezik | Trade | Në javë | PF | Fitimi | Max DD | Trade-i më i keq |
+|---|---|---|---|---|---|---|
+| **v1.04 (me mbylljen e së premtes)** | 1081 | 4.7 | 1.28 | +131% | 8.6% | −1.8R |
+| pa mbylljen e së premtes (`InpFridayClose = 0`) | 1104 | 4.8 | 1.29 | +136% | 8.4% | −3.6R |
+
+Pa mbylljen e së premtes, 53 trade mbeten hapur gjatë fundjavës dhe gap-i i së hënës mund të kalojë SL-në.
+Prandaj mbyllja mbetet e ndezur si mbrojtje.
+
 ### v1.03: më shumë hyrje
 
 Mënyrat e testuara për më shumë hyrje (kontroll në 2022–24, 2024–26 dhe 2020–22):
@@ -238,8 +252,8 @@ Mënyrat e testuara për më shumë hyrje (kontroll në 2022–24, 2024–26 dhe
 | Pa filtër trendi | ❌ dyfish trade, por PF 1.04 dhe DD dyfish |
 | Hyrje M5 | ❌ ndihmon një periudhë, dëmton tjetrën |
 
-Inputet e reja: `InpPerCandle`, `InpReentry`, `InpAddSelective` (të gjitha `true`).
-Selective ka key time të PDF-së. Kush do PRO24 pa asnjë orar, vendos `InpAddSelective = false`.
+Inputet e reja: `InpPerCandle`, `InpReentry` (`true`) dhe `InpAddSelective` (`false` që nga v1.04).
+Selective ka key time të PDF-së.
 
 Simulimi 2023.01.01–2026.09.26, 0.5% rrezik për trade:
 
