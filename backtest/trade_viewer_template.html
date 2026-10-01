@@ -243,7 +243,8 @@ function select(i) {
      ["Max ne favor", rTxt(t.mfe)], ["Max kunder", rTxt(t.mae)], ["Trendi", (t.tr > 0 ? "+" : "") + t.tr.toFixed(2) + "%"], ["Pozicioni", t.pos || "-"]]
       .map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("") + `</div>` +
     `<div class="why"><h3>Pse hyri (analiza e EA-se)</h3><ul>${why.map(w => `<li>${esc(w.replace(/;/g, ","))}</li>`).join("") || "<li>-</li>"}</ul></div>` +
-    `<div class="how"><h3>Si mbaroi</h3><p><b>${t.k}</b> · ${KIND[t.k] || ""}. ${esc(t.desc)}</p></div>`;
+    `<div class="how"><h3>Si mbaroi</h3><p><b>${t.k}</b> · ${KIND[t.k] || ""}. ${esc(t.desc)}</p></div>` +
+    (t.shot ? `<div class="how"><h3>Foto ne MT5</h3><p class="num">GOLD_MULTI_PRO_shots\\${esc(t.shot)}</p></div>` : "");
   draw();
 }
 function setTfButtons() { document.querySelectorAll(".tf").forEach(b => b.classList.toggle("on", +b.dataset.tf === tf)); }

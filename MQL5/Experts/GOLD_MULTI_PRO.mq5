@@ -61,9 +61,11 @@
 // v1.04: drawings and screenshots no longer depend on the journal file.
 //   When GOLD_MULTI_PRO_journal.csv is still open in Excel (Windows locks
 //   it), the journal is written to a new file with the date in its name.
+// v1.05: the terminal writes a screenshot a moment after the request, so
+//   the copy to Common\Files is retried every 5 minutes and at the end.
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.04"
+#property version   "1.05"
 #property description "GOLD MULTI PRO: six tested XAUUSD setups (CRT H4, daily CRT, inside day, displacement, Bollinger and CCI pullbacks), every trade with its reason."
 
 #include <Trade/Trade.mqh>
@@ -1791,7 +1793,10 @@ void PrintTradeSummary()
 // copied to the common folder right away.
 // ============================================================================
 
-int  g_shotsOk = 0, g_shotsCopied = 0, g_shotsFailed = 0;
+int      g_shotsOk = 0, g_shotsCopied = 0, g_shotsFailed = 0;
+string   g_shotQ[];          // screenshots still to copy to the common folder
+int      g_shotTry[];        // copy attempts per queued screenshot (given up after 3)
+datetime g_shotFlush = 0;
 
 bool ShotsOn() { return InpShots != SHOTS_OFF && !g_silent && !g_noChart; }
 
@@ -1847,15 +1852,36 @@ string Shot(datetime from, string tag)
       return "";
    }
    g_shotsOk++;
-   if(CopyToCommon(name))
-      g_shotsCopied++;
-   else if(g_shotsOk - g_shotsCopied <= 3)
-      Log("Screenshot " + name + " stays in " + TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL5\\Files (copy failed, error " +
-          IntegerToString(GetLastError()) + ")");
+   // the terminal writes the picture a moment later: it is copied by ShotFlush()
+   int q = ArraySize(g_shotQ);
+   ArrayResize(g_shotQ, q + 1, 256);
+   ArrayResize(g_shotTry, q + 1, 256);
+   g_shotQ[q]   = name;
+   g_shotTry[q] = 0;
    if(g_shotsOk == 1)
-      Log("First screenshot: " + (g_shotsCopied == 1 ? TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files\\" :
-                                   TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL5\\Files\\") + name);
+      Log("First screenshot: " + TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL5\\Files\\" + name +
+          " (copied to " + TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files\\GOLD_MULTI_PRO_shots once written)");
    return name;
+}
+
+// Copies the screenshots that have been written by now to Common\Files.
+void ShotFlush()
+{
+   int n = ArraySize(g_shotQ), k = 0;
+   for(int i = 0; i < n; i++)
+   {
+      if(CopyToCommon(g_shotQ[i]))
+         g_shotsCopied++;
+      else if(++g_shotTry[i] < 3)
+      {
+         g_shotQ[k]   = g_shotQ[i];
+         g_shotTry[k] = g_shotTry[i];
+         k++;
+      }
+      // after 3 attempts the picture stays in the terminal's own MQL5\Files folder
+   }
+   ArrayResize(g_shotQ, k);
+   ArrayResize(g_shotTry, k);
 }
 
 // The trade on the chart like a position tool: risk box (entry to SL), target
@@ -2238,7 +2264,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "GOLD MULTI PRO v1.04  |  " + _Symbol + "  |  " +
+   string s = "GOLD MULTI PRO v1.05  |  " + _Symbol + "  |  " +
               (g_ddStopped ? "STOPPED: MAX DRAWDOWN (restart with InpResetDDStop = true)" : InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
@@ -2411,7 +2437,7 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += ModelName(k, m) + " ";
-      Log(StringFormat("GOLD MULTI PRO v1.04 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("GOLD MULTI PRO v1.05 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
@@ -2420,8 +2446,8 @@ int OnInit()
       if(XOn(x))
          xl += StringFormat("%s (magic %s)  ", g_xName[x], IntegerToString((long)XMagic(x)));
    if(xl != "")
-      Log("GOLD MULTI PRO v1.04 | H4 setups: " + xl);
-   Log(StringFormat("GOLD MULTI PRO v1.04 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+      Log("GOLD MULTI PRO v1.05 | H4 setups: " + xl);
+   Log(StringFormat("GOLD MULTI PRO v1.05 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 
@@ -2452,7 +2478,7 @@ int OnInit()
 // Last line of the test: where the screenshots are, or why there are none.
 void PrintShotsSummary()
 {
-   string head = "GOLD MULTI PRO v1.04 SCREENSHOTS: ";
+   string head = "GOLD MULTI PRO v1.05 SCREENSHOTS: ";
    if(InpShots == SHOTS_OFF)
       Print(head + "off (InpShots = Off)");
    else if(g_noChart)
@@ -2473,6 +2499,11 @@ void OnDeinit(const int reason)
 {
    PrintTradeSummary();
    JournalStop();
+   for(int tries = 0; tries < 3 && ArraySize(g_shotQ) > 0; tries++)
+   {
+      ChartRedraw(0);
+      ShotFlush();
+   }
    PrintShotsSummary();
    Comment("");
    if(!MQLInfoInteger(MQL_TESTER))
@@ -2489,6 +2520,11 @@ void OnTick()
    }
 
    JournalTrack();
+   if(ArraySize(g_shotQ) > 0 && TimeCurrent() - g_shotFlush >= 300)
+   {
+      g_shotFlush = TimeCurrent();
+      ShotFlush();
+   }
    if(DDCheck())
    {
       if(TimeCurrent() - g_ddPanel >= 60)

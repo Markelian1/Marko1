@@ -31,6 +31,7 @@ def load_trades(path):
             lo=float(r["range low"]), hi=float(r["range high"]), sw=float(r["sweep"]),
             tr=float(r["trendi % nga mesatarja"]), k=r["lloji"], desc=r["pershkrimi"],
             why=r.get("arsyeja e hyrjes (analiza)", ""), pos=r.get("pozicioni", ""),
+            shot=r.get("foto dalja", "").replace("GOLD_MULTI_PRO_shots\\", ""),
         ))
     return out
 
