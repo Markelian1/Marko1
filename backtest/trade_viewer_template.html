@@ -116,6 +116,8 @@ canvas { width: 100%; height: clamp(300px, 52vh, 540px); display: block; }
           <div class="btns">
             <button id="prev" aria-label="Trade-i i meparshem">&larr;</button>
             <button id="next" aria-label="Trade-i tjeter">&rarr;</button>
+            <button id="play" aria-pressed="false" title="Riprodhon trade-t qiri pas qiri (tasti Space)">&#9654; Luaj</button>
+            <button id="speed" aria-label="Shpejtesia e riprodhimit">1x</button>
             <button data-tf="15" class="tf">M15</button>
             <button data-tf="60" class="tf">H1</button>
             <button data-tf="240" class="tf">H4</button>
@@ -208,6 +210,7 @@ const TR = DATA.trades;
 
 // ---- list + filters ---------------------------------------------------------------
 let shown = [], cur = 0, tf = 15;
+let revealT = Infinity, playing = false, speed = 1, raf = 0, anim = null;   // replay state
 const $ = id => document.getElementById(id);
 function applyFilters() {
   const st = $("fStrat").value, rs = $("fRes").value, dr = +$("fDir").value, yr = $("fYear").value;
@@ -230,6 +233,7 @@ function select(i) {
   const row = $("rows").querySelector(`[data-i="${cur}"]`);
   if (row) { row.classList.add("on"); row.scrollIntoView({ block: "nearest" }); }
   const t = shown[cur];
+  if (playing) { anim = null; revealT = -Infinity; } else revealT = Infinity;
   tf = t.s.startsWith("CRT ") ? 15 : 60;
   setTfButtons();
   $("ttl").innerHTML = `#${t.nr} · ${esc(t.s)} <span class="side ${t.d > 0 ? "b" : "s"}">${t.d > 0 ? "BUY" : "SELL"}</span>` +
@@ -306,7 +310,8 @@ function draw() {
     }
   }
   // time-based range
-  if (rs && t.hi > 0) {
+  const R = revealT, entered = R >= t.t, done = R >= tx;
+  if (rs && t.hi > 0 && R >= rs) {
     const x0 = xt(rs), x1 = xt(ce);
     ctx.fillStyle = c.range; ctx.fillRect(x0, y(t.hi), x1 - x0, y(t.lo) - y(t.hi));
     ctx.strokeStyle = c.rangeL; ctx.lineWidth = 1; ctx.strokeRect(x0, y(t.hi), x1 - x0, y(t.lo) - y(t.hi));
@@ -314,34 +319,43 @@ function draw() {
     ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(xc, y(t.hi)); ctx.lineTo(xc, y(t.lo)); ctx.stroke(); ctx.setLineDash([]);
   }
   // position boxes
-  const xe = xt(t.t), xx = Math.max(xt(tx), xe + 3);
-  ctx.fillStyle = c.downS; ctx.fillRect(xe, Math.min(y(t.e), y(t.sl)), xx - xe, Math.abs(y(t.sl) - y(t.e)));
-  if (t.tp > 0) { ctx.fillStyle = c.upS; ctx.fillRect(xe, Math.min(y(t.e), y(t.tp)), xx - xe, Math.abs(y(t.tp) - y(t.e))); }
+  const xe = xt(t.t), xx = Math.max(xt(done ? tx : Math.min(R, tx)), xe + 3);
+  if (entered) {
+    ctx.fillStyle = c.downS; ctx.fillRect(xe, Math.min(y(t.e), y(t.sl)), xx - xe, Math.abs(y(t.sl) - y(t.e)));
+    if (t.tp > 0) { ctx.fillStyle = c.upS; ctx.fillRect(xe, Math.min(y(t.e), y(t.tp)), xx - xe, Math.abs(y(t.tp) - y(t.e))); }
+  }
   // candles
   const cw = Math.max(1, Math.min(9, bw * 0.66));
   bars.forEach((b, i) => {
+    if (b.t > R) return;                       // replay: not reached yet
     const up = b.c >= b.o, x = xi(i);
     ctx.strokeStyle = up ? c.up : c.down; ctx.fillStyle = up ? c.up : c.down; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(Math.round(x) + 0.5, y(b.h)); ctx.lineTo(Math.round(x) + 0.5, y(b.l)); ctx.stroke();
     const yo = y(b.o), yc = y(b.c); ctx.fillRect(x - cw / 2, Math.min(yo, yc), cw, Math.max(1, Math.abs(yc - yo)));
   });
   // sweep
-  if (t.sw > 0 && t.hi > 0) {
+  if (t.sw > 0 && t.hi > 0 && entered) {
     ctx.strokeStyle = c.acc; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
     ctx.beginPath(); ctx.moveTo(xt(rs || t.t - 4 * 3600), y(t.sw)); ctx.lineTo(xx, y(t.sw)); ctx.stroke(); ctx.setLineDash([]);
   }
   // levels
   const lvl = (v, col, txt) => { if (!(v > 0)) return; ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(xe, y(v)); ctx.lineTo(xx, y(v)); ctx.stroke();
     ctx.fillStyle = col; ctx.fillRect(pr + 1, y(v) - 8, W - pr - 1, 16); ctx.fillStyle = c.panel; ctx.textBaseline = "middle"; ctx.fillText(`${txt} ${v.toFixed(2)}`, pr + 4, y(v)); };
+  if (isFinite(R) && R > bars[0].t) {            // replay: the current moment
+    ctx.strokeStyle = c.muted; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
+    ctx.beginPath(); ctx.moveTo(xt(R), pt); ctx.lineTo(xt(R), pb); ctx.stroke(); ctx.setLineDash([]);
+  }
+  if (!entered) return;
   lvl(t.sl, c.down, "SL"); lvl(t.tp, c.up, "TP"); lvl(t.e, c.fg, "IN");
-  // entry -> exit
-  ctx.strokeStyle = t.R > 0 ? c.up : c.down; ctx.lineWidth = 2; ctx.setLineDash([2, 3]);
-  ctx.beginPath(); ctx.moveTo(xe, y(t.e)); ctx.lineTo(xx, y(t.x)); ctx.stroke(); ctx.setLineDash([]);
   // markers
   ctx.fillStyle = t.d > 0 ? c.up : c.down;
   ctx.beginPath(); const ye = y(t.e);
   if (t.d > 0) { ctx.moveTo(xe, ye + 2); ctx.lineTo(xe - 6, ye + 12); ctx.lineTo(xe + 6, ye + 12); } else { ctx.moveTo(xe, ye - 2); ctx.lineTo(xe - 6, ye - 12); ctx.lineTo(xe + 6, ye - 12); }
   ctx.fill();
+  if (!done) return;
+  // entry -> exit
+  ctx.strokeStyle = t.R > 0 ? c.up : c.down; ctx.lineWidth = 2; ctx.setLineDash([2, 3]);
+  ctx.beginPath(); ctx.moveTo(xe, y(t.e)); ctx.lineTo(xx, y(t.x)); ctx.stroke(); ctx.setLineDash([]);
   ctx.beginPath(); ctx.arc(xx, y(t.x), 4.5, 0, Math.PI * 2); ctx.fillStyle = t.R > 0 ? c.up : c.down; ctx.fill();
   ctx.font = `600 12px ${fontNum}`; ctx.textBaseline = "bottom";
   const lab = `${t.out} ${rTxt(t.R)}`; const lw = ctx.measureText(lab).width;
@@ -364,6 +378,38 @@ document.addEventListener("keydown", e => {
   if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
   if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); select(cur + 1); }
   if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); select(cur - 1); }
+});
+// ---- replay: candles appear one by one from the range to the exit, then the next trade
+function animate(now) {
+  if (!playing) return;
+  if (!anim) {
+    const b = geo && geo.bars;
+    if (!b || !b.length) { stopPlay(); return; }
+    anim = { t0: now, w0: b[0].t, w1: b[b.length - 1].t + tf * 60 };
+  }
+  const D = 6000 / speed, k = (now - anim.t0) / D;
+  if (k < 1) { revealT = anim.w0 + (anim.w1 - anim.w0) * k; draw(); raf = requestAnimationFrame(animate); return; }
+  if (revealT !== Infinity) { revealT = Infinity; draw(); }
+  if (k < 1 + 1200 / D) { raf = requestAnimationFrame(animate); return; }   // hold the finished trade a moment
+  if (cur >= shown.length - 1) { stopPlay(); return; }
+  select(cur + 1);
+  raf = requestAnimationFrame(animate);
+}
+function startPlay() {
+  if (!shown.length) return;
+  playing = true; anim = null; revealT = -Infinity; draw();
+  $("play").innerHTML = "&#10074;&#10074; Ndalo"; $("play").setAttribute("aria-pressed", "true"); $("play").classList.add("on");
+  raf = requestAnimationFrame(animate);
+}
+function stopPlay() {
+  playing = false; cancelAnimationFrame(raf); anim = null; revealT = Infinity; draw();
+  $("play").innerHTML = "&#9654; Luaj"; $("play").setAttribute("aria-pressed", "false"); $("play").classList.remove("on");
+}
+$("play").addEventListener("click", () => (playing ? stopPlay() : startPlay()));
+$("speed").addEventListener("click", () => { speed = speed >= 8 ? 1 : speed * 2; $("speed").textContent = speed + "x"; if (anim) anim = null; });
+document.addEventListener("keydown", e => {
+  if (e.key !== " " || e.target.tagName === "SELECT" || e.target.tagName === "INPUT" || e.target.tagName === "BUTTON") return;
+  e.preventDefault(); playing ? stopPlay() : startPlay();
 });
 window.addEventListener("resize", draw);
 try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw); } catch (_) {}

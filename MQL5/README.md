@@ -235,6 +235,11 @@ komandës, ndaj kopjimi i menjëhershëm gjeti skedar bosh. Fotot e atij testi j
 Në v1.05 kopjimi provohet sërish çdo 5 minuta të testit dhe në fund (deri në 3 herë për foto).
 Faqja e trade-ve tregon tani edhe emrin e fotos së çdo trade-i.
 
+Testi vizual i v1.05 krijoi dosjen `GOLD_MULTI_PRO_shots`, por ajo mbeti bosh. Në Strategy Tester `ChartScreenShot`
+kthen "sukses", por MT5 nuk e shkruan skedarin. Fotot punojnë vetëm në demo/live. Për testet, faqja e trade-ve ka
+butonin **Luaj**: e riprodhon çdo trade qiri pas qiri, nga range-i deri te dalja, me shpejtësi 1x–8x, dhe kalon
+vetë te trade-i tjetër (tasti Space e ndez dhe e ndal).
+
 ### v1.04: fotot nuk varen më nga skedari i ditarit
 
 Testi vizual i v1.03 dha `SCREENSHOTS: none saved` dhe nuk pati rreshtin `GOLD MULTI JOURNAL`. Shkaku ishte se
