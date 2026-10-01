@@ -222,10 +222,15 @@ me shumë pak trade (~20 në vit) për ta konsideruar të provuar. Avantazhi i q
 
 # GOLD MULTI PRO (MT5): EA e re me 6 strategji dhe analizë për çdo trade
 
-Skedari: `Experts/GOLD_MULTI_PRO.mq5` (v1.02), magic bazë **880100**.
+Skedari: `Experts/GOLD_MULTI_PRO.mq5` (v1.03), magic bazë **880100**.
 
 **Testi MT5 i v1.00** (2023.01.01–2026.09.26, 0.1%): 1576 trade, PF 1.31, **+27.4%**, DD **1.87%**
 (simulimi priste 1578 trade, +25.5%, DD 2.02%).
+
+### v1.03: rreshti i fundit i testit tregon ku janë fotot
+
+Në fund të çdo testi del rreshti `GOLD MULTI PRO v1.03 SCREENSHOTS:`. Ai tregon ose sa foto u ruajtën dhe rrugën
+e plotë të dosjes, ose që testi u bë **pa Visual mode**. Pa Visual mode MT5 nuk vizaton grafik, prandaj nuk ka foto.
 
 ### v1.02: fotot ruhen pranë ditarit, dhe pamja e trade-ve
 

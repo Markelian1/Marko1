@@ -56,9 +56,11 @@
 //   are most of the profit (filters cut 40-80% of it, PF unchanged).
 // v1.02: the screenshots are copied to Common\Files\GOLD_MULTI_PRO_shots,
 //   next to the journal (the tester kept them in its agent folder).
+// v1.03: the last line of the test says where the screenshots are (with
+//   the full path), or that the test ran without Visual mode.
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.02"
+#property version   "1.03"
 #property description "GOLD MULTI PRO: six tested XAUUSD setups (CRT H4, daily CRT, inside day, displacement, Bollinger and CCI pullbacks), every trade with its reason."
 
 #include <Trade/Trade.mqh>
@@ -1786,6 +1788,8 @@ void PrintTradeSummary()
 // copied to the common folder right away.
 // ============================================================================
 
+int  g_shotsOk = 0, g_shotsCopied = 0, g_shotsFailed = 0;
+
 bool ShotsOn() { return InpShots != SHOTS_OFF && !g_silent && !g_noChart; }
 
 bool CopyToCommon(string name)
@@ -1835,12 +1839,19 @@ string Shot(datetime from, string tag)
    ChartRedraw(0);
    if(!ok)
    {
+      g_shotsFailed++;
       Log("Screenshot failed: " + name + ", error " + IntegerToString(GetLastError()));
       return "";
    }
-   if(!CopyToCommon(name))
+   g_shotsOk++;
+   if(CopyToCommon(name))
+      g_shotsCopied++;
+   else if(g_shotsOk - g_shotsCopied <= 3)
       Log("Screenshot " + name + " stays in " + TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL5\\Files (copy failed, error " +
           IntegerToString(GetLastError()) + ")");
+   if(g_shotsOk == 1)
+      Log("First screenshot: " + (g_shotsCopied == 1 ? TerminalInfoString(TERMINAL_COMMONDATA_PATH) + "\\Files\\" :
+                                   TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL5\\Files\\") + name);
    return name;
 }
 
@@ -2212,7 +2223,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "GOLD MULTI PRO v1.02  |  " + _Symbol + "  |  " +
+   string s = "GOLD MULTI PRO v1.03  |  " + _Symbol + "  |  " +
               (g_ddStopped ? "STOPPED: MAX DRAWDOWN (restart with InpResetDDStop = true)" : InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
@@ -2385,7 +2396,7 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += ModelName(k, m) + " ";
-      Log(StringFormat("GOLD MULTI PRO v1.02 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("GOLD MULTI PRO v1.03 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
@@ -2394,8 +2405,8 @@ int OnInit()
       if(XOn(x))
          xl += StringFormat("%s (magic %s)  ", g_xName[x], IntegerToString((long)XMagic(x)));
    if(xl != "")
-      Log("GOLD MULTI PRO v1.02 | H4 setups: " + xl);
-   Log(StringFormat("GOLD MULTI PRO v1.02 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+      Log("GOLD MULTI PRO v1.03 | H4 setups: " + xl);
+   Log(StringFormat("GOLD MULTI PRO v1.03 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 
@@ -2423,10 +2434,31 @@ int OnInit()
    return INIT_SUCCEEDED;
 }
 
+// Last line of the test: where the screenshots are, or why there are none.
+void PrintShotsSummary()
+{
+   string head = "GOLD MULTI PRO v1.03 SCREENSHOTS: ";
+   if(InpShots == SHOTS_OFF)
+      Print(head + "off (InpShots = Off)");
+   else if(g_noChart)
+      Print(head + "none - the test ran WITHOUT Visual mode. Tick 'Visual mode' in the Strategy Tester settings and run again.");
+   else if(g_shotsOk == 0)
+      Print(head + StringFormat("none saved (%d failed)", g_shotsFailed));
+   else
+   {
+      Print(head + StringFormat("%d saved, %d of them in %s\\Files\\GOLD_MULTI_PRO_shots", g_shotsOk, g_shotsCopied,
+                                TerminalInfoString(TERMINAL_COMMONDATA_PATH)));
+      if(g_shotsCopied < g_shotsOk)
+         Print(head + StringFormat("%d are in %s\\MQL5\\Files\\GOLD_MULTI_PRO_shots", g_shotsOk - g_shotsCopied,
+                                   TerminalInfoString(TERMINAL_DATA_PATH)));
+   }
+}
+
 void OnDeinit(const int reason)
 {
    PrintTradeSummary();
    JournalStop();
+   PrintShotsSummary();
    Comment("");
    if(!MQLInfoInteger(MQL_TESTER))
       ObjectsDeleteAll(0, OBJ_PFX);
