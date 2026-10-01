@@ -154,7 +154,7 @@ Optimizimi 2 (vetëm "Require an active HTF CRT in the same direction"):
 
 # CRT PRO24 (MT5): versioni 24 orë, pa orare fikse
 
-Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.00). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
+Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.01). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
 
 - Ndjek **të 6 qirinjtë H4** të ditës (1AM, 5AM, 9AM, 1PM, 5PM, 9PM New York).
 - Hyn **kur vjen setup-i**, në çfarëdo ore: sweep i range-it, pastaj një qiri M15 mbyllet përtej qiririt
@@ -188,6 +188,48 @@ U mbajt varianti më i thjeshtë dhe më i qëndrueshëm.
 PRO24 është pozitiv çdo vit (2023 +44R, 2024 +15R, 2025 +42R, 2026 +11R). Ka më shumë trade,
 por më pak fitim për trade dhe rreth dyfish më shumë drawdown se versioni me orare.
 Për të njëjtin drawdown si Combined, përdor rreth **0.3%** rrezik.
+
+### Ditari i trade-ve dhe pse humbet (PRO24 v1.01)
+
+**Në MT5:** PRO24 shkruan çdo trade të mbyllur te
+`Common\Files\CRT_PRO24_journal.csv` (`InpJournal = true`). Në fund të testit, Journal tregon rrugën e plotë.
+Gjen dosjen edhe nga MT5: File → Open Data Folder, pastaj dy nivele lart → `Common\Files`.
+Në tester skedari rishkruhet në çdo test; në demo/live trade-t e reja shtohen në fund.
+
+**Në Python:** `backtest/loss_report.py` bën të njëjtën gjë me historikun e brokerit:
+```
+python3 loss_report.py --mt5 ../data/XAUUSD_M15.csv --mode pro24      # ose combined / active / selective
+```
+Rezultatet janë te `reports/pro24_trades.csv` dhe `reports/combined_trades.csv`.
+
+Kolonat e skedarit:
+- koha (server dhe NY), dita, qiriri H4, drejtimi;
+- entry/SL/TP, SL në $, rezultati në R, dalja, minutat;
+- **max në favor** dhe **max kundër** (në R): sa shkoi trade-i për ne dhe kundër nesh;
+- range-i, sweep-i, pozicioni i hyrjes në range, trendi, SL/ATR, spread-i;
+- **lloji** i fitimit/humbjes dhe një **përshkrim**.
+
+| Lloji | Kuptimi |
+|---|---|
+| L1 | kthim i menjëhershëm: SL brenda 1 ore, pa lëvizje në favor (sweep-i vazhdoi) |
+| L2 | pa drejtim: SL pas më shumë se 1 ore, pa lëvizje në favor |
+| L3 | lëvizje e vogël në favor (+0.3R deri +1R), pastaj SL |
+| L4 | fitim i humbur: arriti +1R e më shumë, pastaj SL |
+| L5 | mbyllje me kohë në humbje |
+| W1 / W2 | TP / mbyllje me kohë në fitim |
+
+Rezultati për PRO24 (2023.01–2026.09, 1226 trade):
+- L3 232 trade, L1 192, L4 120, L2 88, L5 72;
+- W1 316 trade, W2 206.
+
+Rregullat e testuara kundër këtyre humbjeve, me kontroll në të dy gjysmat dhe në 2020–2022:
+- mbyllja e 50% në +1R me break-even (për L4);
+- pa sweep-e më të thella se 50% e range-it;
+- pa hyrje të premten;
+- pa qiririn 9PM.
+
+**Asnjë nuk qëndron:** ndihmon një periudhë dhe dëmton një tjetër. Humbjet janë kryesisht pjesë e natyrshme e strategjisë.
+Ditari i demo-s do tregojë nëse në tregun live shfaqet ndonjë model i ri.
 
 ---
 

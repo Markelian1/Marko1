@@ -15,13 +15,16 @@
 //     premium / discount of the range
 //   - SL beyond the sweep, TP 1:2, trade closed after 8 hours if still open
 //   - Friday close (weekend gap protection) can be switched off
+//   - journal: every closed trade is written to Common/Files/
+//     CRT_PRO24_journal.csv with its context, how far it went for and
+//     against (in R) and a short description of the win or loss
 //
 // Tested on FP Trading XAUUSD 2023.01-2026.09 (simulation, 0.5% risk):
 // about 1200 trades, PF about 1.17, max DD about 23R. CRT_1AM_EA in
 // Combined mode (with its time rules) did PF 1.37-1.40, max DD about 13R.
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.00"
+#property version   "1.01"
 #property description "CRT PRO24: the CRT_1AM_EA setup in every H4 candle, 24 hours, no fixed hours."
 
 #include <Trade/Trade.mqh>
@@ -112,6 +115,7 @@ input group "5. DISPLAY"
 input bool InpShowPanel = true;  // Show status panel
 input bool InpDraw      = true;  // Draw ranges, sweeps and entries
 input bool InpVerbose   = true;  // Print setups to the journal
+input bool InpJournal   = true;  // Write every trade with a description to Common\Files\CRT_PRO24_journal.csv
 
 input group "6. OPTIMIZATION"
 input int  InpOptMinTrades = 30; // Min trades for the "Custom max" score
@@ -142,6 +146,9 @@ struct ModelDay
    double   sweepLow;
    double   obBuyHigh;   // high of the candle that dug below the low
    datetime obBuyTime;
+   double   prevClose;   // previous daily close
+   double   trendAvg;    // its N-day average (trend)
+   double   atr;         // average daily range of the last 14 days
    string   status;
 };
 
@@ -216,6 +223,7 @@ double    g_stWinR = 0.0, g_stLossR = 0.0, g_stWorstR = 0.0;
 double    g_stSLR = 0.0, g_stTPR = 0.0, g_stOtherR = 0.0;
 
 void   SetPlannedRisk(ulong posId, double riskMoney);
+void   JournalOpen(ulong posId, int s, int m, int dir, double entry, double sl, double tp, double extreme, double spread);
 string SlotTitle(int s);
 
 
@@ -521,6 +529,9 @@ void ResetModelDay(int s, int m, datetime key)
    g_md[s][m].sweepLow   = 0.0;
    g_md[s][m].obBuyHigh  = 0.0;
    g_md[s][m].obBuyTime  = 0;
+   g_md[s][m].prevClose  = 0.0;
+   g_md[s][m].trendAvg   = 0.0;
+   g_md[s][m].atr        = 0.0;
    g_md[s][m].status     = "waiting";
 }
 
@@ -575,6 +586,21 @@ void InitModelDay(int s, int m, datetime crtNY)
    g_md[s][m].crtOpen = oc[0].open;
    MqlRates prev = dd[k - 2];
    g_md[s][m].pdMid   = InpPremDisc == PD_PREV_DAY ? (prev.high + prev.low) / 2.0 : (hi + lo) / 2.0;
+
+   double closeSum = 0.0, rangeSum = 0.0;
+   int    rangeN   = 0;
+   for(int j = 0; j < k - 1; j++)
+   {
+      closeSum += dd[j].close;
+      if(j >= k - 15)
+      {
+         rangeSum += dd[j].high - dd[j].low;
+         rangeN++;
+      }
+   }
+   g_md[s][m].prevClose = prev.close;
+   g_md[s][m].trendAvg  = closeSum / (k - 1);
+   g_md[s][m].atr       = rangeN > 0 ? rangeSum / rangeN : 0.0;
 
    int prevDir = prev.close > prev.open ? 1 : prev.close < prev.open ? 2 : 0;
    if(InpBias == BIAS_NONE)
@@ -740,6 +766,7 @@ bool TryEnter(int s, int m, int dir, datetime sigNY, double extreme)
    double pnlAtSl = 0.0;
    if(OrderCalcProfit(dir == 1 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, _Symbol, lots, fill, sl, pnlAtSl) && pnlAtSl < 0.0)
       SetPlannedRisk(g_trade.ResultOrder(), -pnlAtSl);
+   JournalOpen(g_trade.ResultOrder(), s, m, dir, fill, sl, tp, extreme, spread);
 
    g_lastSkip = "-";
    g_fTrades++;
@@ -944,6 +971,207 @@ void PrintTradeSummary()
                       g_stOther, g_stOther > 0 ? g_stOtherR / g_stOther : 0.0));
 }
 
+// ============================================================================
+// TRADE JOURNAL (CSV with a description of every trade)
+// ============================================================================
+
+#define JOURNAL_FILE "CRT_PRO24_journal.csv"
+
+struct JournalRec
+{
+   ulong    posId;
+   datetime tIn;
+   int      model;
+   int      dir;
+   double   entry;
+   double   sl;
+   double   tp;
+   double   risk;
+   double   rngLow;
+   double   rngHigh;
+   double   extreme;
+   double   trendPct;
+   double   atr;
+   double   spread;
+   double   mfe;      // best excursion so far (R)
+   double   mae;      // worst excursion so far (R)
+};
+
+JournalRec g_jr[];
+int        g_jFile  = INVALID_HANDLE;
+int        g_jCount = 0;
+string     g_dayName[7] = {"e diel", "e hene", "e marte", "e merkure", "e enjte", "e premte", "e shtune"};
+
+string F2(double v) { return DoubleToString(v, 2); }
+
+// Tester: a new file per run. Live / demo: append to the existing file.
+void JournalStart()
+{
+   if(!InpJournal || g_silent)
+      return;
+   bool tester = (bool)MQLInfoInteger(MQL_TESTER);
+   int  flags  = FILE_CSV | FILE_ANSI | FILE_COMMON | FILE_WRITE;
+   if(!tester)
+      flags |= FILE_READ | FILE_SHARE_READ;
+   g_jFile = FileOpen(JOURNAL_FILE, flags, ',');
+   if(g_jFile == INVALID_HANDLE)
+   {
+      Print("Journal: cannot open ", JOURNAL_FILE, ", error ", GetLastError());
+      return;
+   }
+   FileSeek(g_jFile, 0, SEEK_END);
+   if(FileSize(g_jFile) == 0)
+      FileWrite(g_jFile, "nr", "hyrja (server)", "hyrja (NY)", "dita", "qiriri H4", "drejtimi", "entry", "SL", "TP",
+                "SL $", "rezultati R", "dalja", "minuta", "max ne favor R", "max kunder R", "range low", "range high",
+                "sweep", "sweep pertej range $", "hyrja ne range %", "trendi % nga mesatarja", "SL / ATR ditore",
+                "spread", "lloji", "pershkrimi");
+}
+
+void JournalStop()
+{
+   if(g_jFile == INVALID_HANDLE)
+      return;
+   FileClose(g_jFile);
+   g_jFile = INVALID_HANDLE;
+   Print("CRT PRO24 JOURNAL: ", g_jCount, " trades -> ",
+         TerminalInfoString(TERMINAL_COMMONDATA_PATH), "\\Files\\", JOURNAL_FILE);
+}
+
+void JournalOpen(ulong posId, int s, int m, int dir, double entry, double sl, double tp, double extreme, double spread)
+{
+   if(g_jFile == INVALID_HANDLE)
+      return;
+   int n = ArraySize(g_jr);
+   ArrayResize(g_jr, n + 1, 16);
+   g_jr[n].posId    = posId;
+   g_jr[n].tIn      = TimeCurrent();
+   g_jr[n].model    = m;
+   g_jr[n].dir      = dir;
+   g_jr[n].entry    = entry;
+   g_jr[n].sl       = sl;
+   g_jr[n].tp       = tp;
+   g_jr[n].risk     = MathAbs(entry - sl);
+   g_jr[n].rngLow   = g_md[s][m].rngLow;
+   g_jr[n].rngHigh  = g_md[s][m].rngHigh;
+   g_jr[n].extreme  = extreme;
+   g_jr[n].trendPct = g_md[s][m].trendAvg > 0.0 ?
+                      (g_md[s][m].prevClose - g_md[s][m].trendAvg) / g_md[s][m].trendAvg * 100.0 : 0.0;
+   g_jr[n].atr      = g_md[s][m].atr;
+   g_jr[n].spread   = spread;
+   g_jr[n].mfe      = 0.0;
+   g_jr[n].mae      = 0.0;
+}
+
+// Best and worst excursion of the open trades, every tick.
+void JournalTrack()
+{
+   int n = ArraySize(g_jr);
+   if(n == 0)
+      return;
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   for(int i = 0; i < n; i++)
+   {
+      if(g_jr[i].risk <= 0.0)
+         continue;
+      double x = g_jr[i].dir == 1 ? (bid - g_jr[i].entry) / g_jr[i].risk : (g_jr[i].entry - ask) / g_jr[i].risk;
+      g_jr[i].mfe = MathMax(g_jr[i].mfe, x);
+      g_jr[i].mae = MathMin(g_jr[i].mae, x);
+   }
+}
+
+string LossText(string kind)
+{
+   if(kind == "L1") return "kthim i menjehershem: cmimi shkoi kunder menjehere (sweep-i vazhdoi)";
+   if(kind == "L2") return "pa drejtim: nuk shkoi kurre ne favor";
+   if(kind == "L3") return "levizje e vogel ne favor (+0.3R deri +1R) pastaj SL";
+   if(kind == "L4") return "fitim i humbur: arriti te pakten +1R pastaj u kthye ne SL";
+   if(kind == "L5") return "mbyllje me kohe ne humbje (8 ore ose e premte)";
+   if(kind == "W1") return "fitim: preku TP";
+   return "mbyllje me kohe ne fitim";
+}
+
+void JournalClose(ulong posId, double r, long reason)
+{
+   int i = -1;
+   for(int k = ArraySize(g_jr) - 1; k >= 0; k--)
+      if(g_jr[k].posId == posId)
+      {
+         i = k;
+         break;
+      }
+   if(i < 0)
+      return;
+   JournalRec j = g_jr[i];
+   int n = ArraySize(g_jr);
+   for(int k = i; k < n - 1; k++)
+      g_jr[k] = g_jr[k + 1];
+   ArrayResize(g_jr, n - 1);
+   if(g_jFile == INVALID_HANDLE)
+      return;
+
+   datetime tOut    = TimeCurrent();
+   double   minutes = (double)(tOut - j.tIn) / 60.0;
+   string   kind;
+   if(reason == DEAL_REASON_TP)
+      kind = "W1";
+   else if(reason == DEAL_REASON_SL)
+      kind = j.mfe >= 1.0 ? "L4" : j.mfe >= 0.3 ? "L3" : minutes <= 60.0 ? "L1" : "L2";
+   else
+      kind = r > 0.0 ? "W2" : "L5";
+
+   // context tags
+   datetime    ny = ToNY(j.tIn);
+   MqlDateTime d;
+   TimeToStruct(ny, d);
+   double rng   = j.rngHigh - j.rngLow;
+   double depth = j.dir == 2 ? j.extreme - j.rngHigh : j.rngLow - j.extreme;
+   double pos   = rng > 0.0 ? (j.entry - j.rngLow) / rng : 0.5;
+   string tags  = "";
+   if(j.model == 5)
+      tags += " / qiri 9PM (Asia)";
+   if(j.model == 4)
+      tags += " / qiri 5PM (pas mbylljes ditore)";
+   if(d.hour == 8 || d.hour == 9)
+      tags += " / ora e lajmeve 8-10 NY";
+   if(d.day_of_week == 5)
+      tags += " / e premte";
+   if(MathAbs(j.trendPct) < 0.5)
+      tags += " / trend i dobet (<0.5% nga mesatarja)";
+   if(j.atr > 0.0 && j.risk > 0.30 * j.atr)
+      tags += " / SL i madh (>30% e ATR ditore)";
+   if(j.atr > 0.0 && j.risk < 0.10 * j.atr)
+      tags += " / SL i vogel (<10% e ATR ditore)";
+   if(rng > 0.0 && depth > 0.5 * rng)
+      tags += " / sweep i thelle (>50% e range-it)";
+   if(j.spread > 0.35)
+      tags += " / spread i larte (>0.35)";
+   if((j.dir == 2 && pos < 0.6) || (j.dir == 1 && pos > 0.4))
+      tags += " / hyrje afer mesit te range-it";
+
+   string side = j.dir == 1 ? "BUY" : "SELL";
+   string desc = g_mName[j.model] + " " + side + ": " + LossText(kind);
+   if(kind == "L4")
+      desc += StringFormat(" (maksimumi +%.1fR)", j.mfe);
+   if(kind == "L1" || kind == "L2" || kind == "L3" || kind == "L4")
+      desc += StringFormat("; SL pas %.0f min", minutes);
+   if(kind == "L5" || kind == "W2")
+      desc += StringFormat("; %+.2fR pas %.1f oresh", r, minutes / 60.0);
+   if(tags != "")
+      desc += " |" + StringSubstr(tags, 2);
+
+   g_jCount++;
+   FileWrite(g_jFile, IntegerToString(g_jCount), TimeToString(j.tIn, TIME_DATE | TIME_MINUTES),
+             TimeToString(ny, TIME_DATE | TIME_MINUTES), g_dayName[d.day_of_week], g_mName[j.model], side,
+             F2(j.entry), F2(j.sl), F2(j.tp), F2(j.risk), F2(r),
+             reason == DEAL_REASON_SL ? "SL" : reason == DEAL_REASON_TP ? "TP" : "kohe",
+             IntegerToString((int)MathRound(minutes)), F2(j.mfe), F2(j.mae), F2(j.rngLow), F2(j.rngHigh),
+             F2(j.extreme), F2(depth), IntegerToString((int)MathRound(pos * 100.0)), F2(j.trendPct),
+             j.atr > 0.0 ? F2(j.risk / j.atr) : "", F2(j.spread), kind, desc);
+   if(!MQLInfoInteger(MQL_TESTER))
+      FileFlush(g_jFile);
+}
+
 void OnTradeTransaction(const MqlTradeTransaction &trans, const MqlTradeRequest &request, const MqlTradeResult &result)
 {
    if(trans.type != TRADE_TRANSACTION_DEAL_ADD || trans.deal == 0)
@@ -979,6 +1207,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans, const MqlTradeRequest 
    double r      = money / g_risk[i].riskMoney;
    long   reason = HistoryDealGetInteger(trans.deal, DEAL_REASON);
    RemoveRisk(i);
+   JournalClose(posId, r, reason);
 
    g_slot[slot].trades++;
    g_slot[slot].totalR += r;
@@ -1030,7 +1259,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "CRT PRO24 v1.00  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
+   string s = "CRT PRO24 v1.01  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
    s += "\n" + FunnelText() + "\nRejected: " + RejectText();
@@ -1134,17 +1363,21 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += g_mName[m] + " ";
-      Log(StringFormat("CRT PRO24 v1.00 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("CRT PRO24 v1.01 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
-   Log(StringFormat("CRT PRO24 v1.00 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+   Log(StringFormat("CRT PRO24 v1.01 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 
    if(!MQLInfoInteger(MQL_TESTER))
       Log("Server time " + TimeToString(TimeCurrent(), TIME_DATE | TIME_MINUTES) + " = New York " +
           NYText(ToNY(TimeCurrent())) + ". If New York time is wrong, change InpNYOffset.");
+
+   ArrayResize(g_jr, 0);
+   g_jCount = 0;
+   JournalStart();
 
    g_ready = D1Update();
    for(int k = 0; k < SLOTS; k++)
@@ -1156,6 +1389,7 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    PrintTradeSummary();
+   JournalStop();
    Comment("");
    if(!MQLInfoInteger(MQL_TESTER))
       ObjectsDeleteAll(0, OBJ_PFX);
@@ -1170,6 +1404,7 @@ void OnTick()
          return;
    }
 
+   JournalTrack();
    CloseAtExitTime();
 
    // Everything else runs once per closed entry-TF bar of each slot.

@@ -66,6 +66,7 @@ class ModelDay:
         self.done = False
         self.allow = 0
         self.rng_hi = self.rng_lo = self.crt_open = self.pd_mid = self.atr = 0.0
+        self.prev_close = self.trend_avg = 0.0
         self.swept_hi = self.swept_lo = False
         self.sweep_hi = self.sweep_lo = 0.0
         self.ob_sell_low = self.ob_buy_high = 0.0
@@ -119,6 +120,8 @@ def run(bars, cfg):
         d.pd_mid = ((prev[2] + prev[3]) if cfg["pd"] == "prev" else (d.rng_hi + d.rng_lo)) / 2.0
         prev_dir = 1 if prev[4] > prev[1] else 2 if prev[4] < prev[1] else 0
         closes = [d1[x][4] for x in d1_days[max(0, i - cfg["sma"]):i]]
+        d.prev_close = prev[4]
+        d.trend_avg = sum(closes) / len(closes) if closes else 0.0
         sma_dir = 0 if len(closes) < cfg["sma"] else 1 if prev[4] > sum(closes) / len(closes) else 2
         if cfg.get("sma2") and sma_dir:
             c2 = [d1[x][4] for x in d1_days[max(0, i - cfg["sma2"]):i]]
@@ -179,6 +182,9 @@ def run(bars, cfg):
             return "SL too big"
         if cfg.get("min_rng_atr") and d.rng_hi - d.rng_lo < cfg["min_rng_atr"] * d.atr:
             return "small range"
+        depth = (extreme - d.rng_hi) if direction == 2 else (d.rng_lo - extreme)
+        if cfg.get("max_depth_rng") and depth > cfg["max_depth_rng"] * (d.rng_hi - d.rng_lo):
+            return "deep sweep"
         if cfg["tp"] == "rr":
             tp = entry + cfg["rr"] * risk if direction == 1 else entry - cfg["rr"] * risk
         else:
@@ -188,11 +194,15 @@ def run(bars, cfg):
                 return "RR"
         entries_day[day_ny] += 1
         return dict(dir=direction, entry=entry, sl=sl, tp=tp, risk=risk, t_in=t, model=name,
-                    rng=d.rng_hi - d.rng_lo, crt_open=d.crt_open, pd_mid=d.pd_mid,
-                    depth=(extreme - d.rng_hi) if direction == 2 else (d.rng_lo - extreme))
+                    rng=d.rng_hi - d.rng_lo, rng_hi=d.rng_hi, rng_lo=d.rng_lo, crt_open=d.crt_open, pd_mid=d.pd_mid,
+                    extreme=extreme, depth=(extreme - d.rng_hi) if direction == 2 else (d.rng_lo - extreme),
+                    atr=d.atr, spread=spread, prev_close=d.prev_close, trend_avg=d.trend_avg,
+                    mfe=0.0, mae=0.0)
 
     def close(p, price, t, why):
         r = (price - p["entry"]) / p["risk"] if p["dir"] == 1 else (p["entry"] - price) / p["risk"]
+        if "part" in p:                       # part of the position was closed earlier
+            r = p["part"] + (1 - cfg["pc_frac"]) * r
         trades.append(dict(p, r=r, t_out=t, why=why))
 
     for bar in bars:
@@ -279,6 +289,14 @@ def run(bars, cfg):
                 pos = None
                 continue
 
+        # ---- best / worst excursion so far, in R ---------------------------
+        if pos["dir"] == 1:
+            pos["mfe"] = max(pos["mfe"], (h - pos["entry"]) / pos["risk"])
+            pos["mae"] = min(pos["mae"], (l - pos["entry"]) / pos["risk"])
+        else:
+            pos["mfe"] = max(pos["mfe"], (pos["entry"] - l - spread) / pos["risk"])
+            pos["mae"] = min(pos["mae"], (pos["entry"] - h - spread) / pos["risk"])
+
         # ---- SL / TP on this M1 bar (stop first when both) ---------------
         if pos["dir"] == 1:
             if l <= pos["sl"]:
@@ -294,6 +312,12 @@ def run(bars, cfg):
             elif l + spread <= pos["tp"]:
                 close(pos, pos["tp"], t, "TP")
                 pos = None
+        # ---- partial close at +pc_r and stop to break-even (next bar on) -
+        if pos is not None and cfg.get("pc_r", 0) > 0 and "part" not in pos:
+            trig = pos["entry"] + cfg["pc_r"] * pos["risk"] if pos["dir"] == 1 else pos["entry"] - cfg["pc_r"] * pos["risk"]
+            if (pos["dir"] == 1 and h >= trig) or (pos["dir"] == 2 and l + spread <= trig):
+                pos["part"] = cfg["pc_frac"] * cfg["pc_r"]
+                pos["sl"] = pos["entry"]
         # ---- break-even after +be_r (from the next bar on) ---------------
         if pos is not None and cfg.get("be_r", 0) > 0:
             trig = pos["entry"] + cfg["be_r"] * pos["risk"] if pos["dir"] == 1 else pos["entry"] - cfg["be_r"] * pos["risk"]
