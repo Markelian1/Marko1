@@ -58,9 +58,12 @@
 //   next to the journal (the tester kept them in its agent folder).
 // v1.03: the last line of the test says where the screenshots are (with
 //   the full path), or that the test ran without Visual mode.
+// v1.04: drawings and screenshots no longer depend on the journal file.
+//   When GOLD_MULTI_PRO_journal.csv is still open in Excel (Windows locks
+//   it), the journal is written to a new file with the date in its name.
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.03"
+#property version   "1.04"
 #property description "GOLD MULTI PRO: six tested XAUUSD setups (CRT H4, daily CRT, inside day, displacement, Bollinger and CCI pullbacks), every trade with its reason."
 
 #include <Trade/Trade.mqh>
@@ -1912,6 +1915,7 @@ struct JournalRec
 };
 
 JournalRec g_jr[];
+string     g_jName = JOURNAL_FILE;
 int        g_jFile  = INVALID_HANDLE;
 int        g_jCount = 0;
 string     g_dayName[7] = {"e diel", "e hene", "e marte", "e merkure", "e enjte", "e premte", "e shtune"};
@@ -1927,11 +1931,18 @@ void JournalStart()
    int  flags  = FILE_CSV | FILE_ANSI | FILE_COMMON | FILE_WRITE;
    if(!tester)
       flags |= FILE_READ | FILE_SHARE_READ;
-   g_jFile = FileOpen(JOURNAL_FILE, flags, ',');
+   g_jName = JOURNAL_FILE;
+   g_jFile = FileOpen(g_jName, flags, ',');
    if(g_jFile == INVALID_HANDLE)
    {
-      Print("Journal: cannot open ", JOURNAL_FILE, ", error ", GetLastError());
-      return;
+      // usually the file is still open in Excel or another program: write to a new file instead
+      int err = GetLastError();
+      g_jName = "GOLD_MULTI_PRO_journal_" + SafeName(TimeToString(TimeLocal(), TIME_DATE | TIME_MINUTES)) + ".csv";
+      g_jFile = FileOpen(g_jName, flags, ',');
+      Print("Journal: ", JOURNAL_FILE, " cannot be opened (error ", err, "; is it open in Excel?). ",
+            g_jFile == INVALID_HANDLE ? "No journal for this run." : "Writing to " + g_jName + " instead.");
+      if(g_jFile == INVALID_HANDLE)
+         return;
    }
    FileSeek(g_jFile, 0, SEEK_END);
    if(FileSize(g_jFile) == 0)
@@ -1944,17 +1955,21 @@ void JournalStart()
 void JournalStop()
 {
    if(g_jFile == INVALID_HANDLE)
+   {
+      if(InpJournal && !g_silent)
+         Print("GOLD MULTI JOURNAL: not written, the file could not be opened (close it in Excel and run again)");
       return;
+   }
    FileClose(g_jFile);
    g_jFile = INVALID_HANDLE;
    Print("GOLD MULTI JOURNAL: ", g_jCount, " trades -> ",
-         TerminalInfoString(TERMINAL_COMMONDATA_PATH), "\\Files\\", JOURNAL_FILE);
+         TerminalInfoString(TERMINAL_COMMONDATA_PATH), "\\Files\\", g_jName);
 }
 
 void JournalOpen(ulong posId, int s, int m, int dir, double entry, double sl, double tp, double extreme, double spread, string why)
 {
-   if(g_jFile == INVALID_HANDLE)
-      return;
+   if(g_silent)
+      return;            // the record is kept even without a journal file: drawings and screenshots use it
    int n = ArraySize(g_jr);
    ArrayResize(g_jr, n + 1, 16);
    g_jr[n].posId    = posId;
@@ -2051,8 +2066,6 @@ void JournalClose(ulong posId, double r, long reason, double exitPrice)
    for(int k = i; k < n - 1; k++)
       g_jr[k] = g_jr[k + 1];
    ArrayResize(g_jr, n - 1);
-   if(g_jFile == INVALID_HANDLE)
-      return;
 
    datetime tOut    = TimeCurrent();
    double   minutes = (double)(tOut - j.tIn) / 60.0;
@@ -2111,6 +2124,8 @@ void JournalClose(ulong posId, double r, long reason, double exitPrice)
    if(InpShots == SHOTS_CLOSE || InpShots == SHOTS_BOTH || (InpShots == SHOTS_LOSSES && r < 0.0))
       shot = Shot(j.tIn - 40 * PeriodSeconds(_Period),
                   "pos" + IntegerToString((long)posId) + "_" + strat + "_" + side + StringFormat("_%+.1fR_", r) + exitTxt);
+   if(g_jFile == INVALID_HANDLE)
+      return;
    string why = j.why;
    StringReplace(why, ",", ";");          // the file is comma separated
    g_jCount++;
@@ -2223,7 +2238,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "GOLD MULTI PRO v1.03  |  " + _Symbol + "  |  " +
+   string s = "GOLD MULTI PRO v1.04  |  " + _Symbol + "  |  " +
               (g_ddStopped ? "STOPPED: MAX DRAWDOWN (restart with InpResetDDStop = true)" : InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
@@ -2396,7 +2411,7 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += ModelName(k, m) + " ";
-      Log(StringFormat("GOLD MULTI PRO v1.03 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("GOLD MULTI PRO v1.04 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
@@ -2405,8 +2420,8 @@ int OnInit()
       if(XOn(x))
          xl += StringFormat("%s (magic %s)  ", g_xName[x], IntegerToString((long)XMagic(x)));
    if(xl != "")
-      Log("GOLD MULTI PRO v1.03 | H4 setups: " + xl);
-   Log(StringFormat("GOLD MULTI PRO v1.03 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+      Log("GOLD MULTI PRO v1.04 | H4 setups: " + xl);
+   Log(StringFormat("GOLD MULTI PRO v1.04 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 
@@ -2437,7 +2452,7 @@ int OnInit()
 // Last line of the test: where the screenshots are, or why there are none.
 void PrintShotsSummary()
 {
-   string head = "GOLD MULTI PRO v1.03 SCREENSHOTS: ";
+   string head = "GOLD MULTI PRO v1.04 SCREENSHOTS: ";
    if(InpShots == SHOTS_OFF)
       Print(head + "off (InpShots = Off)");
    else if(g_noChart)

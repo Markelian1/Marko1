@@ -222,10 +222,19 @@ me shumë pak trade (~20 në vit) për ta konsideruar të provuar. Avantazhi i q
 
 # GOLD MULTI PRO (MT5): EA e re me 6 strategji dhe analizë për çdo trade
 
-Skedari: `Experts/GOLD_MULTI_PRO.mq5` (v1.03), magic bazë **880100**.
+Skedari: `Experts/GOLD_MULTI_PRO.mq5` (v1.04), magic bazë **880100**.
 
 **Testi MT5 i v1.00** (2023.01.01–2026.09.26, 0.1%): 1576 trade, PF 1.31, **+27.4%**, DD **1.87%**
 (simulimi priste 1578 trade, +25.5%, DD 2.02%).
+
+### v1.04: fotot nuk varen më nga skedari i ditarit
+
+Testi vizual i v1.03 dha `SCREENSHOTS: none saved` dhe nuk pati rreshtin `GOLD MULTI JOURNAL`. Shkaku ishte se
+`GOLD_MULTI_PRO_journal.csv` ishte i hapur në Excel: Windows e bllokon skedarin dhe EA nuk mund ta hapte. Në v1.03
+vizatimet dhe fotot ishin të lidhura me ditarin, ndaj nuk u bë asgjë.
+
+Në v1.04 vizatimet dhe fotot punojnë edhe pa ditar. Kur skedari është i bllokuar, ditari shkruhet te një skedar i ri
+me datën në emër, p.sh. `GOLD_MULTI_PRO_journal_2026.10.01_22-40.csv`. Journal e tregon emrin e ri.
 
 ### v1.03: rreshti i fundit i testit tregon ku janë fotot
 
