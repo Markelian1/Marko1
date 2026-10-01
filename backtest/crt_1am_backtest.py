@@ -130,6 +130,20 @@ def run(bars, cfg):
         e50 = c if e50 is None else e50 + (c - e50) * 2 / 51
         h4ema[k] = 1 if e20 > e50 else 2
 
+    # ATR regime of the entry timeframe (SMA of the true range, like iATR): ATR(14) of each bar / average of the 50 before
+    atr_ratio = {}
+    if cfg.get("atr_expand"):
+        ks = sorted(m15)
+        trs, atrs = [], []
+        for j, k in enumerate(ks):
+            b = m15[k]
+            pc = m15[ks[j - 1]][4] if j else b[4]
+            trs.append(max(b[2] - b[3], abs(b[2] - pc), abs(b[3] - pc)))
+            atrs.append(sum(trs[-14:]) / 14 if len(trs) >= 14 else None)
+            if j >= 64 and atrs[-1] is not None:
+                prev = atrs[-51:-1]
+                atr_ratio[k] = atrs[-1] / (sum(prev) / 50)
+
     eng = Engine()
     d1_fed = 0                       # number of daily bars fed to the engine
     md = {}
@@ -212,6 +226,10 @@ def run(bars, cfg):
             return "key time"
         if not d.allow & direction:
             return "bias"
+        if cfg.get("atr_expand"):
+            last = t - t % M15 - M15                # the entry-TF bar that closed last
+            if atr_ratio.get(last, 0.0) < cfg["atr_expand"]:
+                return "atr quiet"
         lf = cfg.get("local")
         if lf:
             want = direction if not lf.endswith("_opp") else 3 - direction

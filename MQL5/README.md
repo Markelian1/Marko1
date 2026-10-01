@@ -220,6 +220,36 @@ me shumë pak trade (~20 në vit) për ta konsideruar të provuar. Avantazhi i q
 
 ---
 
+# Testi i "SweepContinuation_PDH_PDL_MT5" (kod i jashtëm)
+
+Logjika: breakout i high/low-it të ditës së kaluar (PDH/PDL) që mbahet. Hyrja bëhet me treg në mbylljen e qiririt
+përtej nivelit. SL vendoset përtej qiririt të sinjalit + 1.5$, TP 2R, me filtër ATR(14) ≥ mesatarja e 50 qirinjve
+dhe një trade në ditë. U simulua rresht për rresht me `backtest/pdh_continuation.py`.
+
+| Grafiku | 2020.03–22.06 | 2022.07–24.06 | 2024.07–26.09 |
+|---|---|---|---|
+| M30, siç vjen (offset 0) | PF 0.85, −35R | PF 0.78, −50R | PF 1.08, +18R |
+| M30, ora e saktë NY (offset −7) | PF 0.97, −8R | PF 0.90, −20R | PF 1.20, +48R |
+| M30, ora NY + trendi ditor | PF 0.95, −5R | PF 0.98, −3R | PF 1.43, +57R |
+| M15, siç vjen | – | PF 0.85, −37R | PF 1.04, +9R |
+| M5 (2025.07–26.09), siç vjen / ora NY | | | PF 0.83 / 1.12 |
+
+Fiton vetëm në 2024–26, kur ari ishte në trend të fortë rritës. Edhe kërkimi i 844 strategjive dha të njëjtën për
+breakout-in e ditës së kaluar (PF 0.82–0.97 në 2020–23). Filtri i tij ATR, i provuar te CRT H4 jonë, e ul fitimin
+(PF 1.09–1.27 në vend të 1.19–1.32). Nuk u fut asgjë prej tij.
+
+Problemet e kodit:
+- Me `InpServerToETOffset = 0` në FP Trading, "dita" fillon në 18:00 të serverit, pra 11:00 NY. Për NY duhet −7.
+- Seanca `yyyymmdd − 1` jep p.sh. 20260300 ditën e parë të muajit. Kjo shkakton një rinisje të dytë të seancës,
+  dhe atë ditë nuk tregton deri në 18:00.
+- `PositionSelect(_Symbol)` dhe `PositionClose(_Symbol)` nuk e kontrollojnë magic-un. Pranë një EA tjetër (p.sh.
+  GOLD MULTI PRO) ai nuk hap trade kur EA tjetër ka pozicion, dhe me time stop ose EOD mund ta mbyllë pozicionin e tjetrit.
+- Kur loti i llogaritur është nën minimumin, vendos minimumin. Rreziku mund të kalojë 1%.
+- Hyrja kontrollohet në çdo qiri mbi nivel, jo vetëm në thyerje. TP llogaritet nga mbyllja, jo nga çmimi i hyrjes.
+- Nuk ka mbyllje të premteje, kufi ditor apo ndalim drawdown-i. Rreziku i parazgjedhur është 1%.
+
+---
+
 # GOLD MULTI PRO (MT5): EA e re me 6 strategji dhe analizë për çdo trade
 
 Skedari: `Experts/GOLD_MULTI_PRO.mq5` (v1.05), magic bazë **880100**.
