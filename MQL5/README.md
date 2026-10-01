@@ -187,6 +187,37 @@ EA-ja i llogarit të gjitha oraret në kohën e New York-ut:
   është 00:00, serveri duhet të tregojë 07:00. Nëse jo, ndryshoje `InpNYOffset`.
 - Te paneli i EA-së shfaqet "New York time"; duhet të përputhet me orën reale të NY.
 
+## Laboratori i modeleve (`backtest/model_lab.py`): 52 kombinime
+
+U testuan 52 modele në disa timeframe, me historikun M30 2020.02–2026.09 dhe kosto
+= spread-i i brokerit + 0.10 $:
+- **CRT klasik** (motori i CRT_MTF_EA) në M30, H1, H4, me dhe pa trend, me sesion ose gjithë ditën,
+  me TP te target-i ose 1:2;
+- **sweep i high/low të ditës së kaluar** (turtle soup) në M30 dhe H1;
+- **breakout i range-it Asia** në drejtimin e daljes;
+- **modeli H4 i PDF-ve** (Active dhe Selective, me dhe pa trend).
+
+Rregulli: modelet zgjidhen **vetëm** me 2020.02–2023.06, pastaj gjykohen me 2023.07–2026.09.
+
+| Familja | Rezultati |
+|---|---|
+| CRT klasik M30 / H1 / H4 (24 variante) | humbin: PF 0.77–1.06 |
+| Sweep i ditës së kaluar (8) | humbin: PF 0.79–1.01 |
+| Breakout Asia (16) | afër zeros: PF 0.82–1.13, humbës në periudhën e parë |
+| **Modeli H4 i PDF-ve** | **i vetmi që kalon**; 3 variante, të tre pozitive edhe në periudhën e panjohur |
+
+Kombinimi i modeleve humbëse nuk krijon fitim. Kombinimi i dobishëm është
+**Active + Selective njëkohësisht**, në dy grafikë me magic number të ndryshëm.
+Rezultati mbi M15 2022.10–2026.09, me spread +0.10 $:
+
+| | Trade në ditë | Mesatarja | PF | R në vit | Max DD |
+|---|---|---|---|---|---|
+| Active | 0.92 | +0.10R | 1.19 | 22.8 | 13.5R |
+| **Active + Selective** | **0.96** | **+0.12R** | **1.23** | **28.0** | **14.5R** |
+
+Shënim: modeli H4 u ndërtua duke parë të gjithë periudhën, prandaj për të "periudha e panjohur"
+nuk është plotësisht e panjohur. Për 49 modelet e tjera testi është i pastër.
+
 ## v1.03: dy mënyra, Active dhe Selective (`InpMode`)
 
 Kërkesa ishte 4–5 trade në ditë. Testi me historikun real tregon se kjo metodë nuk i jep:
