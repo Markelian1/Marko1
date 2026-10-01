@@ -168,6 +168,25 @@ dhe historikun e FP Trading:
 Humb në çdo timeframe dhe në të dy gjysmat. Është e njëjta qasje si CRT_MTF_EA v1.10. SL mesatar është rreth 2.3 $,
 prandaj spread-i (~0.2 $) merr ~10% të rrezikut në rreth 40 trade në ditë.
 
+### Përmirësimet e provuara mbi V3
+
+U testuan 32 kombinime mbi hyrjen e V3, d.m.th. hyrjen në mbylljen e CRT:
+- filtrat e kostos (SL buffer 0.30, SL min 1 $ / 4× spread, spread max 0.50, sweep min 10%);
+- trendi ditor SMA 50;
+- CRT H4 ose D1 në të njëjtin drejtim;
+- sesioni 01–13 NY;
+- TP min 2R;
+- hyrje në M5, M15 dhe H1.
+
+| Më të mirat | Trade | PF (gjysma 1 / 2) |
+|---|---|---|
+| M5 + kosto + trend + CRT H4 + sesion (2025–26) | 520 | 1.03 (1.13 / 0.94) |
+| M15 + kosto + trend + sesion + TP ≥ 2R (2022–26) | 543 | 1.05 (1.05 / 1.05) |
+| **CRT_1AM_EA Combined (MT5, 2023–26)** | 788 | **1.37** |
+
+Edhe me të gjitha filtrat, hyrja në mbylljen e CRT mbetet afër zeros. Avantazhi i CRT_1AM_EA vjen nga
+hyrja te thyerja e OB në M15, brenda strukturës kohore H4, në drejtimin e trendit.
+
 ---
 
 # CRT PRO24 (MT5): versioni 24 orë, pa orare fikse

@@ -193,6 +193,8 @@ def run(bars, tf, cfg):
                     why = "outside session"
                 elif pos is not None:
                     why = "position open"
+                elif cfg.get("allow") and not cfg["allow"](t, d):
+                    why = "bias"
                 elif cfg["max_day"] > 0 and day_count[t // 86400] >= cfg["max_day"]:
                     why = "max trades/day"
                 elif cfg["max_spread"] > 0 and spread > cfg["max_spread"]:
