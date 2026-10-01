@@ -52,6 +52,7 @@ ACTIVE = dict(DEFAULT, tf=900, ohlc=False, exit_hhmm=0, max_hold=8 * 3600, max_d
 # EA "Any time" mode: Active rules on all six H4 candles, no news pause
 # (None = no key time, the whole candle).
 ANYTIME = dict(ACTIVE, skip_hours=(), models={n: None for n in MODELS})
+PRO24 = ANYTIME                   # CRT_1AM_PRO24.mq5 uses the same rules
 
 
 def hhmm_min(v):
@@ -74,6 +75,8 @@ class ModelDay:
 def run(bars, cfg):
     off = cfg["ny_offset"] * 3600
     M15 = cfg["tf"]                 # entry timeframe in seconds (1800 = M30, 900 = M15)
+    CANDLE = cfg.get("candle", 4 * 3600)               # CRT candle length (H4 by default)
+    defs = cfg.get("model_defs", MODELS)              # name -> (start hour NY, candles in the range)
     m15 = {}      # open time -> [t, o, h, l, c]
     d1 = {}       # server day -> [t, o, h, l, c]
     for t, o, h, l, c, _ in bars:
@@ -95,15 +98,16 @@ def run(bars, cfg):
     pos = None
     entries_day = defaultdict(int)
     cur_m15 = None
+    recent = []                      # ranges of the last 20 closed entry-TF bars
 
     def init_day(name, crt_ny):
-        hour, n_rng = MODELS[name]
+        hour, n_rng = defs[name]
         d = ModelDay(crt_ny)
         crt_srv = crt_ny + off
         n_rng = cfg.get("range_candles", {}).get(name, n_rng)
-        rng = [m15[k] for k in range(crt_srv - n_rng * 4 * 3600, crt_srv, M15) if k in m15]
+        rng = [m15[k] for k in range(crt_srv - n_rng * CANDLE, crt_srv, M15) if k in m15]
         # first bar of the candle (the 5PM candle starts after the daily break)
-        first = next((m15[k] for k in range(crt_srv, crt_srv + 4 * 3600, M15) if k in m15), None)
+        first = next((m15[k] for k in range(crt_srv, crt_srv + CANDLE, M15) if k in m15), None)
         day = crt_srv - crt_srv % DAY
         i = d1_index.get(day, 0)
         if len(rng) < 4 or first is None or i == 0:
@@ -173,6 +177,8 @@ def run(bars, cfg):
             return "SL too small"
         if cfg.get("max_sl_atr") and risk > cfg["max_sl_atr"] * d.atr:
             return "SL too big"
+        if cfg.get("min_rng_atr") and d.rng_hi - d.rng_lo < cfg["min_rng_atr"] * d.atr:
+            return "small range"
         if cfg["tp"] == "rr":
             tp = entry + cfg["rr"] * risk if direction == 1 else entry - cfg["rr"] * risk
         else:
@@ -203,9 +209,14 @@ def run(bars, cfg):
                 d1_fed += 1
 
             ny = closed[0] - off
+            avg_rng = sum(recent) / len(recent) if recent else 0.0
+            spike = cfg.get("spike", 0) > 0 and avg_rng > 0 and closed[2] - closed[3] > cfg["spike"] * avg_rng
+            recent.append(closed[2] - closed[3])
+            if len(recent) > 20:
+                recent.pop(0)
             for name in cfg["models"]:
-                crt_ny = ny - (ny - MODELS[name][0] * 3600) % DAY     # latest start of this candle
-                if not crt_ny <= ny < crt_ny + 4 * 3600:
+                crt_ny = ny - (ny - defs[name][0] * 3600) % DAY     # latest start of this candle
+                if not crt_ny <= ny < crt_ny + CANDLE:
                     continue
                 d = md.get(name)
                 if d is None or d.key != crt_ny:
@@ -223,7 +234,7 @@ def run(bars, cfg):
                         continue
                     funnel["OB breaks"] += 1
                     extreme = max(d.sweep_hi, bh) if direction == 2 else min(d.sweep_lo, bl)
-                    res = try_enter(name, d, direction, ny + M15, bar, extreme)
+                    res = "spike" if spike else try_enter(name, d, direction, ny + M15, bar, extreme)
                     if direction == 2:
                         d.ob_sell_t = float("inf")
                     else:

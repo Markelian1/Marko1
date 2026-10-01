@@ -152,6 +152,45 @@ Optimizimi 2 (vetëm "Require an active HTF CRT in the same direction"):
 
 ---
 
+# CRT PRO24 (MT5): versioni 24 orë, pa orare fikse
+
+Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.00). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
+
+- Ndjek **të 6 qirinjtë H4** të ditës (1AM, 5AM, 9AM, 1PM, 5PM, 9PM New York).
+- Hyn **kur vjen setup-i**, në çfarëdo ore: sweep i range-it, pastaj një qiri M15 mbyllet përtej qiririt
+  që bëri sweep-in dhe brenda range-it.
+- Nuk ka key time, pauzë lajmesh apo dalje me orë.
+- Filtrat: trendi ditor (mesatarja 50-ditore) dhe premium/discount i range-it.
+- Dalja: SL përtej sweep-it, TP 1:2, mbyllje pas 8 orësh.
+- E premtja në 16:00 NY mbyll trade-t (mbrojtje nga gap-i i fundjavës, `InpFridayClose = 0` e fik).
+- Magic **770100**, pra mund të punojë krah CRT_1AM_EA (660100/660101).
+
+### Si u zgjodh
+
+U testuan kombinime pa orare fikse, me zgjedhje në 2022.07–2024.06 dhe kontroll në 2024.07–2026.09
+dhe në 2020–2022 (M30):
+- Hyrja M15 ose M30, OHLC on/off, trendi 50 ose 100 ditë: dallime të vogla.
+- **Filtri i madhësisë së range-it** (ndaj ATR), që do të hiqte vetë qirinjtë e qetë si Asia: nuk qëndron.
+- **Filtri i qiririt të lajmeve** (spike > 2–3× mesatarja), që do të zëvendësonte pauzën 8–10: nuk qëndron.
+  Konfigurimet më të mira të periudhës së parë ranë në PF 1.05–1.07 në të dytën.
+- **CRT mbi qirinjtë H1** (24 në ditë): humbës, PF 0.82–1.01. Hyrja M5: nuk përmirëson.
+
+U mbajt varianti më i thjeshtë dhe më i qëndrueshëm.
+
+### Rezultati (simulim, 2023.01.01–2026.09.26)
+
+| | Trade | Win | PF | Total | Max DD | Fitimi |
+|---|---|---|---|---|---|---|
+| **PRO24, 0.5% rrezik** | 1226 | 42.6% | 1.17 | +112R | 11.1% | +71% |
+| PRO24, 0.3% rrezik | 1226 | 42.6% | 1.17 | +112R | 6.8% | +39% |
+| CRT_1AM_EA Combined, 0.5% | 787 | 47.0% | 1.40 | +151R | 6.5% | +109% |
+
+PRO24 është pozitiv çdo vit (2023 +44R, 2024 +15R, 2025 +42R, 2026 +11R). Ka më shumë trade,
+por më pak fitim për trade dhe rreth dyfish më shumë drawdown se versioni me orare.
+Për të njëjtin drawdown si Combined, përdor rreth **0.3%** rrezik.
+
+---
+
 # CRT 1AM EA (MT5): strategjia nga PDF-të "1AM CRT" dhe "Time & Price"
 
 Skedari: `Experts/CRT_1AM_EA.mq5` (v1.05). Është EA e re, e veçantë nga CRT_MTF_EA.
