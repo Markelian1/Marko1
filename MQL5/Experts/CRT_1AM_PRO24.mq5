@@ -8,9 +8,12 @@
 //   - every H4 candle of the day (1AM, 5AM, 9AM, 1PM, 5PM, 9PM New York)
 //     is a CRT candle; the range is the candle(s) before it (Asia range
 //     for the 1AM candle)
-//   - the candle sweeps the range high or low, and the entry comes when a
-//     later M15 candle closes through the candle that made the sweep
-//     (order block) and back inside the range, at whatever time that is
+//   - the candle sweeps the range high or low; when a later M15 candle
+//     closes through the candle that made the sweep (order block) and
+//     back inside the range, the EA waits up to 4 hours for price to come
+//     back to the order-block level (retest) and enters there; a new
+//     sweep extreme first cancels the setup (v1.02; market entry at the
+//     break is still an option)
 //   - daily trend bias (previous close vs its 50-day average) and
 //     premium / discount of the range
 //   - SL beyond the sweep, TP 1:2, trade closed after 8 hours if still open
@@ -20,11 +23,11 @@
 //     against (in R) and a short description of the win or loss
 //
 // Tested on FP Trading XAUUSD 2023.01-2026.09 (simulation, 0.5% risk):
-// about 1200 trades, PF about 1.17, max DD about 23R. CRT_1AM_EA in
-// Combined mode (with its time rules) did PF 1.37-1.40, max DD about 13R.
+// retest entry about 920 trades, PF 1.29, +107%, max DD 9.8%; market entry
+// (v1.00-v1.01) 1226 trades, PF 1.17, +71%, max DD 11.1%.
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.01"
+#property version   "1.02"
 #property description "CRT PRO24: the CRT_1AM_EA setup in every H4 candle, 24 hours, no fixed hours."
 
 #include <Trade/Trade.mqh>
@@ -72,6 +75,12 @@ enum ENUM_REJECT
 };
 #define REJECTS 16   // number of ENUM_REJECT values
 
+enum ENUM_CRT_ENTRY
+{
+   ENTRY_MARKET = 0, // Market order at the order-block break
+   ENTRY_RETEST = 1  // Limit at the order-block level (retest)
+};
+
 enum ENUM_CRT_TP
 {
    TP_RR    = 0, // Fixed reward:risk (1:2 / 1:3)
@@ -92,6 +101,9 @@ input group "2. BIAS / PREMIUM-DISCOUNT"
 input ENUM_CRT_BIAS InpBias     = BIAS_TREND;      // Higher-timeframe bias
 input int           InpTrendDays = 50;             // Days in the trend average (bias = daily trend)
 input ENUM_CRT_PD   InpPremDisc = PD_RANGE;        // Premium/discount (sell above / buy below the middle)
+
+input ENUM_CRT_ENTRY InpEntryType  = ENTRY_RETEST; // Entry
+input int            InpRetestHours = 4;            // Retest: how long to wait for price to come back (hours)
 
 input group "3. RISK / EXIT"
 input double InpRiskPercent  = 0.5;    // Risk per trade (% of balance)
@@ -223,6 +235,23 @@ double    g_stWinR = 0.0, g_stLossR = 0.0, g_stWorstR = 0.0;
 double    g_stSLR = 0.0, g_stTPR = 0.0, g_stOtherR = 0.0;
 
 void   SetPlannedRisk(ulong posId, double riskMoney);
+bool   TryEnter(int s, int m, int dir, datetime sigNY, double extreme);
+
+// Retest: one waiting limit (virtual: the EA sends a market order when
+// price touches the level).
+struct Pending
+{
+   bool     on;
+   int      s;
+   int      m;
+   int      dir;
+   double   level;     // order-block level to come back to
+   double   extreme;   // sweep extreme (SL side); beyond it the setup is gone
+   datetime sigNY;
+   datetime expires;  // server time
+};
+Pending g_pend;
+int     g_rtPlaced = 0, g_rtFilled = 0, g_rtExpired = 0, g_rtInvalid = 0;
 void   JournalOpen(ulong posId, int s, int m, int dir, double entry, double sl, double tp, double extreme, double spread);
 string SlotTitle(int s);
 
@@ -777,6 +806,45 @@ bool TryEnter(int s, int m, int dir, datetime sigNY, double extreme)
    return true;
 }
 
+// Every tick: fill, cancel or expire the waiting retest.
+void PendingCheck()
+{
+   if(!g_pend.on)
+      return;
+   int s = g_pend.s, m = g_pend.m;
+   if(g_md[s][m].done || HasOpenPosition(g_slot[s].magic))
+   {
+      g_pend.on = false;
+      return;
+   }
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   if(TimeCurrent() > g_pend.expires)
+   {
+      g_pend.on = false;
+      g_rtExpired++;
+      g_md[s][m].status = "retest expired";
+      return;
+   }
+   if((g_pend.dir == 2 && ask > g_pend.extreme) || (g_pend.dir == 1 && bid < g_pend.extreme))
+   {
+      g_pend.on = false;
+      g_rtInvalid++;
+      g_md[s][m].status = "retest cancelled: new sweep extreme";
+      return;
+   }
+   bool touched = g_pend.dir == 2 ? bid >= g_pend.level : ask <= g_pend.level;
+   if(!touched)
+      return;
+   g_pend.on = false;
+   if(TryEnter(s, m, g_pend.dir, g_pend.sigNY, g_pend.extreme))
+   {
+      g_rtFilled++;
+      g_md[s][m].done   = true;
+      g_md[s][m].status = "traded (retest)";
+   }
+}
+
 // One closed entry-TF bar through the model.
 void ModelStep(int s, int m, const MqlRates &b, bool latest)
 {
@@ -818,10 +886,29 @@ void ModelStep(int s, int m, const MqlRates &b, bool latest)
 
       double extreme = dir == 2 ? MathMax(g_md[s][m].sweepHigh, b.high) : MathMin(g_md[s][m].sweepLow, b.low);
       bool entered = false;
-      if(latest)
-         entered = TryEnter(s, m, dir, sigNY, extreme);
-      else
+      if(!latest)
          Skip(REJ_STALE, g_slot[s].name + g_mName[m] + ": stale signal");
+      else if(InpEntryType == ENTRY_RETEST)
+      {
+         // Wait for price to come back to the broken order-block level.
+         if(!g_pend.on && !HasOpenPosition(g_slot[s].magic))
+         {
+            g_pend.on      = true;
+            g_pend.s       = s;
+            g_pend.m       = m;
+            g_pend.dir     = dir;
+            g_pend.level   = dir == 2 ? g_md[s][m].obSellLow : g_md[s][m].obBuyHigh;
+            g_pend.extreme = extreme;
+            g_pend.sigNY   = sigNY;
+            g_pend.expires = TimeCurrent() + InpRetestHours * 3600;
+            g_rtPlaced++;
+            g_md[s][m].status = StringFormat("waiting for retest of %s", PriceText(g_pend.level));
+            Log(StringFormat("[%s] %s retest limit %s (SL side %s), valid %dh", g_mName[m], dir == 2 ? "SELL" : "BUY",
+                             PriceText(g_pend.level), PriceText(extreme), InpRetestHours));
+         }
+      }
+      else
+         entered = TryEnter(s, m, dir, sigNY, extreme);
 
       // This order block is used up either way; a new sweep extreme makes a new one.
       if(dir == 2)
@@ -949,6 +1036,9 @@ void PrintTradeSummary()
 {
    Print("CRT PRO24 FUNNEL: " + FunnelText());
    Print("CRT PRO24 REJECTED: " + RejectText());
+   if(InpEntryType == ENTRY_RETEST)
+      Print(StringFormat("CRT PRO24 RETEST: placed %d | filled %d | expired %d | cancelled (new extreme) %d",
+                         g_rtPlaced, g_rtFilled, g_rtExpired, g_rtInvalid));
    if(g_stN == 0)
    {
       Print("CRT PRO24 SUMMARY: no closed trades");
@@ -1259,10 +1349,13 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "CRT PRO24 v1.01  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
+   string s = "CRT PRO24 v1.02  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
    s += "\n" + FunnelText() + "\nRejected: " + RejectText();
+   if(g_pend.on)
+      s += StringFormat("\nWaiting retest: %s %s at %s (until %s)", g_mName[g_pend.m], g_pend.dir == 2 ? "SELL" : "BUY",
+                        PriceText(g_pend.level), TimeToString(g_pend.expires, TIME_DATE | TIME_MINUTES));
 
    for(int k = 0; k < SLOTS; k++)
    {
@@ -1312,7 +1405,7 @@ void SetPro24(int s)
 int OnInit()
 {
    if(InpNYOffset < -12 || InpNYOffset > 14 || InpRiskPercent <= 0.0 || InpRiskPercent > 10.0 ||
-      !ValidHHMM(InpFridayClose) || InpMaxHoldHours < 0 || InpMaxTradesDay < 0)
+      !ValidHHMM(InpFridayClose) || InpMaxHoldHours < 0 || InpMaxTradesDay < 0 || InpRetestHours < 1)
    {
       Print("Invalid inputs");
       return INIT_PARAMETERS_INCORRECT;
@@ -1339,6 +1432,8 @@ int OnInit()
    }
    ArrayInitialize(g_rej, 0);
    g_fCandles = g_fNoData = g_fNoBias = g_fHighSweeps = g_fLowSweeps = g_fBreaks = g_fTrades = 0;
+   g_pend.on  = false;
+   g_rtPlaced = g_rtFilled = g_rtExpired = g_rtInvalid = 0;
 
    g_silent  = (bool)MQLInfoInteger(MQL_OPTIMIZATION);
    g_noChart = (bool)MQLInfoInteger(MQL_TESTER) && !(bool)MQLInfoInteger(MQL_VISUAL_MODE);
@@ -1363,11 +1458,11 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += g_mName[m] + " ";
-      Log(StringFormat("CRT PRO24 v1.01 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("CRT PRO24 v1.02 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
-   Log(StringFormat("CRT PRO24 v1.01 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+   Log(StringFormat("CRT PRO24 v1.02 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 
@@ -1437,6 +1532,7 @@ void OnTick()
             if(g_slot[k].mOn[m])
                ModelStep(k, m, bars[i], i == n - 1);
    }
+   PendingCheck();
    if(!newBar)
       return;
 

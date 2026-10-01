@@ -191,7 +191,7 @@ hyrja te thyerja e OB në M15, brenda strukturës kohore H4, në drejtimin e tre
 
 # CRT PRO24 (MT5): versioni 24 orë, pa orare fikse
 
-Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.01). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
+Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.02). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
 
 - Ndjek **të 6 qirinjtë H4** të ditës (1AM, 5AM, 9AM, 1PM, 5PM, 9PM New York).
 - Hyn **kur vjen setup-i**, në çfarëdo ore: sweep i range-it, pastaj një qiri M15 mbyllet përtej qiririt
@@ -225,6 +225,32 @@ U mbajt varianti më i thjeshtë dhe më i qëndrueshëm.
 PRO24 është pozitiv çdo vit (2023 +44R, 2024 +15R, 2025 +42R, 2026 +11R). Ka më shumë trade,
 por më pak fitim për trade dhe rreth dyfish më shumë drawdown se versioni me orare.
 Për të njëjtin drawdown si Combined, përdor rreth **0.3%** rrezik.
+
+### v1.02: hyrje me retest (limit te niveli i OB-së)
+
+Kur një qiri M15 thyen OB-në, PRO24 nuk hyn më menjëherë. Pret deri në **4 orë** që çmimi të kthehet
+te niveli i OB-së dhe hyn aty. Nëse çmimi kalon përtej sweep-it para kësaj, setup-i anulohet.
+`InpEntryType = Market` e kthen sjelljen e vjetër.
+
+Kombinime të tjera të testuara, me zgjedhje në një periudhë dhe kontroll në 2024–26 dhe 2020–22 (M30):
+- **CRT ditore** (sweep i high/low të djeshëm, hyrje me OB në M15/M30/H1): pa avantazh, negative në 2020–22.
+- **Retest te Selective**: më keq.
+- **Retest te Active / PRO24**: më mirë në të tre periudhat, për çdo kohë pritjeje 1–8 orë.
+
+| PRO24, mesatarja për trade | 2022.07–24.06 | 2024.07–26.09 | 2020–22 (M30) |
+|---|---|---|---|
+| hyrje market (v1.01) | +0.075R | +0.080R | +0.042R |
+| **retest 4 orë (v1.02)** | **+0.148R** | **+0.128R** | **+0.098R** |
+
+Për periudhën e testit në MT5 (2023.01.01–2026.09.26, 0.5% rrezik):
+
+| | Trade | PF | Fitimi | Max DD |
+|---|---|---|---|---|
+| PRO24 v1.01 (market) | 1226 | 1.17 | +71% | 11.1% |
+| **PRO24 v1.02 (retest)** | **922** | **1.29** | **+107%** | **9.8%** |
+| CRT_1AM_EA Combined | 787 | 1.40 | +109% | 6.5% |
+
+Retest-i heq kryesisht humbjet "kthim i menjëhershëm" (L1): nga 192 në 67.
 
 ### Ditari i trade-ve dhe pse humbet (PRO24 v1.01)
 

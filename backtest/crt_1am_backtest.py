@@ -52,7 +52,8 @@ ACTIVE = dict(DEFAULT, tf=900, ohlc=False, exit_hhmm=0, max_hold=8 * 3600, max_d
 # EA "Any time" mode: Active rules on all six H4 candles, no news pause
 # (None = no key time, the whole candle).
 ANYTIME = dict(ACTIVE, skip_hours=(), models={n: None for n in MODELS})
-PRO24 = ANYTIME                   # CRT_1AM_PRO24.mq5 uses the same rules
+# CRT_1AM_PRO24.mq5 v1.02: the Any-time rules with a retest limit entry (wait up to 4 hours)
+PRO24 = dict(ANYTIME, entry="retest", retest_sec=4 * 3600)
 
 
 def hhmm_min(v):
@@ -100,6 +101,7 @@ def run(bars, cfg):
     entries_day = defaultdict(int)
     cur_m15 = None
     recent = []                      # ranges of the last 20 closed entry-TF bars
+    pending = None                   # retest limit order waiting for a fill
 
     def init_day(name, crt_ny):
         hour, n_rng = defs[name]
@@ -144,7 +146,7 @@ def run(bars, cfg):
         d.ok = True
         return d
 
-    def try_enter(name, d, direction, sig_ny, bar, extreme):
+    def try_enter(name, d, direction, sig_ny, bar, extreme, price=None):
         t, o, h, l, c, spread = bar
         key = cfg["models"][name]
         m = (sig_ny % DAY) // 60
@@ -167,6 +169,8 @@ def run(bars, cfg):
         if cfg["max_spread"] > 0 and spread > cfg["max_spread"]:
             return "spread"
         bid, ask = o, o + spread
+        if price is not None:                 # limit fill at a given price
+            bid, ask = (price, price + spread) if direction == 2 else (price - spread, price)
         entry = ask if direction == 1 else bid
         if cfg["ohlc"] and ((direction == 2 and bid < d.crt_open) or (direction == 1 and ask > d.crt_open)):
             return "OHLC"
@@ -244,7 +248,15 @@ def run(bars, cfg):
                         continue
                     funnel["OB breaks"] += 1
                     extreme = max(d.sweep_hi, bh) if direction == 2 else min(d.sweep_lo, bl)
-                    res = "spike" if spike else try_enter(name, d, direction, ny + M15, bar, extreme)
+                    if cfg.get("entry") == "retest" and not spike:
+                        # limit at the broken order-block level, valid for retest_sec
+                        if pending is None and pos is None:
+                            level = d.ob_sell_low if direction == 2 else d.ob_buy_high
+                            pending = dict(name=name, d=d, dir=direction, level=level, extreme=extreme,
+                                           sig_ny=ny + M15, expires=t + cfg.get("retest_sec", 7200))
+                        res = "pending"
+                    else:
+                        res = "spike" if spike else try_enter(name, d, direction, ny + M15, bar, extreme)
                     if direction == 2:
                         d.ob_sell_t = float("inf")
                     else:
@@ -265,6 +277,24 @@ def run(bars, cfg):
                         funnel["low sweeps"] += 1
                     d.swept_lo, d.sweep_lo, d.ob_buy_high, d.ob_buy_t = True, bl, bh, closed[0]
         cur_m15 = k
+
+        # ---- retest limit order --------------------------------------------
+        if pending is not None and pos is None:
+            pd_ = pending
+            if t > pd_["expires"] or pd_["d"].done:
+                pending = None
+            elif (pd_["dir"] == 2 and h + spread > pd_["extreme"]) or (pd_["dir"] == 1 and l < pd_["extreme"]):
+                pending = None                                        # new extreme first: setup gone
+                skips["retest invalid"] += 1
+            elif (pd_["dir"] == 2 and h >= pd_["level"]) or (pd_["dir"] == 1 and l + spread <= pd_["level"]):
+                fill = max(o, pd_["level"]) if pd_["dir"] == 2 else min(o + spread, pd_["level"])
+                res = try_enter(pd_["name"], pd_["d"], pd_["dir"], pd_["sig_ny"], bar, pd_["extreme"], price=fill)
+                pending = None
+                if isinstance(res, dict):
+                    pos = res
+                    pd_["d"].done = True
+                else:
+                    skips[res] += 1
 
         if pos is None:
             continue
