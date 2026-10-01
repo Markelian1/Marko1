@@ -160,7 +160,7 @@ def run(bars, tf, cfg):
         d = pos["dir"]
         r = ((exit_price - pos["entry"]) if d == 1 else (pos["entry"] - exit_price)) / pos["risk"]
         r -= cfg["commission"] / (pos["risk"] * cfg["contract"])
-        trades.append(dict(t_in=pos["t"], t_out=t, dir=d, r=r, why=why, tf=tf))
+        trades.append(dict(t_in=pos["t"], t_out=t, dir=d, r=r, why=why, tf=tf, risk=pos["risk"]))
         pos = None
 
     for (t, o, h, l, c, spread) in bars:

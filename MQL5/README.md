@@ -152,6 +152,24 @@ Optimizimi 2 (vetëm "Require an active HTF CRT in the same direction"):
 
 ---
 
+# Testi i "CRT_MTF_MT5_TEST_V3" (kod i jashtëm, 5M CRT)
+
+Rregullat e tregtimit të V3: hyrje me çmim tregu pas çdo CRT 5M të konfirmuar, SL te ekstremi i sweep-it
+pa buffer, TP te ana tjetër e parent-it, pa filtra, 0.01 lot. U testua me `backtest/crt_backtest.py`
+dhe historikun e FP Trading:
+
+| Të dhënat | Trade | Në ditë | Win | PF | Mesatarja | 0.01 lot |
+|---|---|---|---|---|---|---|
+| M1, 2026.06–2026.10 (më i sakti) | 3 579 | 41 | 38.8% | 0.81 | −0.12R | −1 031 $ |
+| M5, 2025.05–2026.10 | 17 749 | 40 | 37.9% | 0.77 | −0.15R | −4 713 $ |
+| Të njëjtat rregulla, CRT M15 (2022–26) | 16 711 | 13 | 37.1% | 0.82 | −0.12R | −2 546 $ |
+| Të njëjtat rregulla, CRT H1 (2022–26) | 3 680 | 3 | 36.9% | 0.89 | −0.07R | −979 $ |
+
+Humb në çdo timeframe dhe në të dy gjysmat. Është e njëjta qasje si CRT_MTF_EA v1.10. SL mesatar është rreth 2.3 $,
+prandaj spread-i (~0.2 $) merr ~10% të rrezikut në rreth 40 trade në ditë.
+
+---
+
 # CRT PRO24 (MT5): versioni 24 orë, pa orare fikse
 
 Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.01). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
