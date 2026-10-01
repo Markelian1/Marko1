@@ -220,6 +220,78 @@ me shumë pak trade (~20 në vit) për ta konsideruar të provuar. Avantazhi i q
 
 ---
 
+# GOLD MULTI PRO (MT5): EA e re me 6 strategji dhe analizë për çdo trade
+
+Skedari: `Experts/GOLD_MULTI_PRO.mq5` (v1.00), magic bazë **880100**.
+
+## Si u ndërtua: kërkim në 844 strategji
+
+`backtest/strategy_search.py` testoi **844 konfigurime nga 28 familje strategjish** mbi historikun
+XAUUSD të FP Trading (M30, 2020.04–2026.09). Familjet:
+- **trend**: MA cross, Donchian, Bollinger/Keltner breakout, Supertrend, MACD, ADX, Parabolic SAR,
+  Ichimoku, Heikin-Ashi, TSMOM;
+- **kthim te mesatarja**: RSI(2), z-score, Stochastic, CCI, N qirinj radhazi, qiri i madh, pivot S1/R1,
+  blerje pas rënies;
+- **breakout**: NR4/NR7, inside bar, squeeze, high/low i ditës ose i javës së kaluar;
+- **price action / ICT**: engulfing, pin bar, outside bar, fair value gap, swing failure (sweep likuiditeti),
+  Fibonacci 61.8%.
+
+Rregullat e testit:
+- Zgjedhje në 2020.04–2023.06 dhe gjykim në 2023.07–2026.09: duhen ≥ 40 trade dhe PF ≥ 1.15 **në të dyja**.
+- Një "kontroll" pa sinjal (hyrje në drejtim të trendit në ritëm fiks) tregon sa jep vetëm trendi i arit:
+  PF ≈ 1.0 në periudhën e parë dhe 1.1–1.3 në të dytën. Një strategji vlen vetëm nëse e kalon këtë.
+- Të mbijetuarat u kontrolluan me çmime M15 dhe M5, dhe u futën vetëm kur e përmirësonin portofolin në
+  2020–22, 2022–24 **dhe** 2024–26.
+
+Çfarë doli:
+- Shumica e strategjive klasike japin PF afër kontrollit, pra fitojnë vetëm sa jep trendi i arit.
+- **FVG intraday** dukej shumë i mirë në M30 (PF 1.3), por ishte efekt i qirinjve të trashë: me renditjen e
+  saktë (hyrja para SL-së në të njëjtin qiri) dhe me çmime M5, PF bie në 0.9–1.0.
+- Mbetën tre module H4 që e përmirësojnë portofolin në të tri periudhat.
+
+## Gjashtë strategjitë
+
+| # | Strategjia | Logjika (pse hyn) | Dalja | Magic |
+|---|---|---|---|---|
+| 1 | **CRT H4** | range-i i qiririt H4 të mëparshëm fshihet (merren stop-et), një qiri M15 mbyllet përtej OB-së, hyrje në retest; trend, premium/discount, filtër volumi | TP 2R, 8h | +0..+5 |
+| 2 | **CRT ditor** | e njëjta mbi qiririn ditor 17:00–17:00 NY, OB M30, retest 8h | TP 2R, 24h | +20 |
+| 3 | **Inside day** | dita e djeshme brenda ditës para saj (energji e mbledhur), breakout M30 në drejtim të trendit | TP 2R, 24h | +30 |
+| 4 | **Displacement** | qiri H4 ≥ 2.5× ATR: urdhra të mëdhenj hyjnë dhe zakonisht vazhdojnë | SL 1.5 ATR, TP 2R, 72h | +40 |
+| 5 | **Bollinger pullback** | në trend, mbyllje H4 jashtë bandës dhe pastaj përsëri brenda: pullback i tepruar që kthehet | TP mesi i bandës, 72h | +50 |
+| 6 | **CCI pullback** | në trend, CCI(20) H4 kthehet mbi −100 (nën +100): pullback-u mbaroi | kur CCI arrin ekstremin tjetër, 72h | +60 |
+
+Simulim (`backtest/gold_multi_pro.py`):
+
+| | 2020.03–22.06 | 2022.07–24.06 | 2024.07–26.09 |
+|---|---|---|---|
+| strategjitë 1–3 (si PRO24 v1.10) | PF 1.21, fitim/DD 3.7 | PF 1.31, fitim/DD 4.6 | PF 1.26, fitim/DD 6.2 |
+| **të gjashta** | **PF 1.24, fitim/DD 5.0** | **PF 1.29, fitim/DD 6.4** | **PF 1.26, fitim/DD 6.5** |
+
+| Rrezik 0.1% | Trade | Fitimi | Max DD |
+|---|---|---|---|
+| 2020.03–2026.09, strategjitë 1–3 | 1784 | +28.3% | 2.29% |
+| **2020.03–2026.09, të gjashta** | **2444** | **+38.1%** | **2.02%** |
+| 2023.01–2026.09, të gjashta (testi MT5) | 1578 | +25.5% | 2.02% |
+
+## Analiza: pse u hap çdo trade
+
+- Çdo hyrje shkruan në Journal rreshtin **ARSYEJA**: strategjinë, nivelet (range, sweep, OB, bandat, CCI),
+  trendin ditor (% nga SMA50), volatilitetin (ATR ditor kundrejt 60 ditëve) dhe volumin e qiririt të fundit H4.
+- E njëjta arsye ruhet në `Common/Files/GOLD_MULTI_PRO_journal.csv`, kolona "arsyeja e hyrjes (analiza)",
+  bashkë me mënyrën si u mbyll trade-i.
+- Mbi grafik, etiketa e çdo hyrjeje e tregon arsyen kur kalon mausin sipër (tooltip).
+- Paneli tregon live **ANALIZA**: trendin, volatilitetin dhe volumin, si dhe gjendjen e çdo strategjie, p.sh.
+  "qiriri i fundit H4 1.3x ATR (sinjal nga 2.5x)" ose "CCI(20) H4 −85".
+
+## Pse nuk ekziston robot pa SL
+
+Asnjë nga 844 konfigurimet nuk fiton çdo trade. Win rate më i lartë që u gjet ishte rreth 65% (RSI2 / qirinj
+rënës me SL shumë të largët), dhe ato ishin me PF ≈ 1.0, pra pa fitim. Robotët që "nuk kapin kurrë SL" ose nuk
+kanë SL, ose përdorin grid/martingale: humbjet i mbajnë hapur derisa një lëvizje e madhe e fshin llogarinë.
+Këtu SL-ja është mbrojtja. Rreziku 0.1%, kufiri ditor 0.3% dhe ndalimi në 3.5% DD e mbajnë humbjen e vogël.
+
+---
+
 # CRT PRO24 (MT5): versioni 24 orë, pa orare fikse
 
 Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.10). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
