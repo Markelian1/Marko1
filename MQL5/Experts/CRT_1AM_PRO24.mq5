@@ -31,6 +31,12 @@
 //     v1.05 its limit sat for up to 4 hours, was refused at the fill and
 //     blocked new setups in the same candle meanwhile (1475 of 3451
 //     retests in the 2023-2026 test). Better in every period tested.
+//   - v1.07: the 9PM candle (Asia session) is skipped (InpSkipAsia).
+//     Its sweeps earned about 0R in every period tested (PF 0.87-1.12)
+//     while adding a quarter of all losing trades; in thin Asia
+//     liquidity a sweep is often the start of a move, not a reversal.
+//     It is still used as part of the 1AM range. The other five
+//     candles still trade at any time of their 4 hours.
 //   - daily trend bias (previous close vs its 50-day average) and
 //     premium / discount of the range
 //   - SL beyond the sweep, TP 1:2, trade closed after 8 hours if still open
@@ -40,7 +46,9 @@
 //     against (in R) and a short description of the win or loss
 //
 // Tested on FP Trading XAUUSD 2023.01-2026.09 (simulation, 0.5% risk):
-//   v1.06 defaults: ~1150 trades, PF 1.29, +144%, max DD 8.3%
+//   v1.07 defaults: ~900 trades, PF 1.30, +106%, max DD 11%, 513 losses
+//   v1.06 same simulation: ~1150 trades, PF 1.22, +101%, max DD 10%, 678 losses
+//   v1.06 in MT5: 1201 trades, PF 1.25, +129%, max DD 11.2%
 //   v1.05 in MT5: 1134 trades, PF 1.24, +114%, max DD 9.5%
 //   v1.04 defaults (per candle + re-entry, no Selective): ~1080 trades,
 //   PF 1.28, +131%, max DD 8.6%, up to 2 positions open at once
@@ -49,7 +57,7 @@
 //   v1.01 (one position, market): 1226 trades, PF 1.17, +71%, max DD 11.1%
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.06"
+#property version   "1.07"
 #property description "CRT PRO24: the CRT_1AM_EA setup in every H4 candle, 24 hours, no fixed hours."
 
 #include <Trade/Trade.mqh>
@@ -122,6 +130,7 @@ input ENUM_TIMEFRAMES InpEntryTF = PERIOD_M15; // Entry / order-block timeframe 
 input bool InpPerCandle    = true;  // One position per H4 candle (more entries, several trades open)
 input bool InpReentry      = true;  // New setup in the same candle after a trade closes
 input bool InpAddSelective = false; // Also trade the PDF Selective model (has fixed key times; magic +10)
+input bool InpSkipAsia     = true;  // Skip setups of the 9PM NY candle (Asia session, thin liquidity)
 
 input group "2. BIAS / PREMIUM-DISCOUNT"
 input ENUM_CRT_BIAS InpBias     = BIAS_TREND;      // Higher-timeframe bias
@@ -1447,7 +1456,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "CRT PRO24 v1.06  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
+   string s = "CRT PRO24 v1.07  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
    s += "\n" + FunnelText() + "\nRejected: " + RejectText();
@@ -1500,7 +1509,7 @@ void SetPro24(int s)
    g_slot[s].exitHHMM = 0;  g_slot[s].maxHoldSec = InpMaxHoldHours * 3600;  g_slot[s].maxDay = InpMaxTradesDay;
    g_slot[s].retest = InpEntryType == ENTRY_RETEST;  g_slot[s].perCandle = InpPerCandle;  g_slot[s].reentry = InpReentry;
    for(int m = 0; m < MODELS; m++)
-      SetModel(s, m, true, -1, -1);
+      SetModel(s, m, !(InpSkipAsia && m == 5), -1, -1);   // 5 = the 9PM candle
 }
 
 // The PDF model of CRT_1AM_EA (Selective): 1AM 2-4, 5AM 5-7, 9AM 9:30-11 NY,
@@ -1580,11 +1589,11 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += g_mName[m] + " ";
-      Log(StringFormat("CRT PRO24 v1.06 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("CRT PRO24 v1.07 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
-   Log(StringFormat("CRT PRO24 v1.06 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+   Log(StringFormat("CRT PRO24 v1.07 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 

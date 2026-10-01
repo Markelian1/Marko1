@@ -222,7 +222,7 @@ me shumë pak trade (~20 në vit) për ta konsideruar të provuar. Avantazhi i q
 
 # CRT PRO24 (MT5): versioni 24 orë, pa orare fikse
 
-Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.06). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
+Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.07). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
 
 - Ndjek **të 6 qirinjtë H4** të ditës (1AM, 5AM, 9AM, 1PM, 5PM, 9PM New York).
 - Hyn **kur vjen setup-i**, në çfarëdo ore: sweep i range-it, pastaj një qiri M15 mbyllet përtej qiririt
@@ -256,6 +256,41 @@ U mbajt varianti më i thjeshtë dhe më i qëndrueshëm.
 PRO24 është pozitiv çdo vit (2023 +44R, 2024 +15R, 2025 +42R, 2026 +11R). Ka më shumë trade,
 por më pak fitim për trade dhe rreth dyfish më shumë drawdown se versioni me orare.
 Për të njëjtin drawdown si Combined, përdor rreth **0.3%** rrezik.
+
+### v1.07: pa setup-et e Asias (qiriri 9PM)
+
+Testi MT5 i v1.06: 1201 trade, PF 1.25, +129%, DD 11.2%, 712 humbje, 14 humbje radhazi.
+
+U testuan rreth 25 ndryshime logjike në 4 periudha (2022.07–24.06 dhe 2024.07–26.09 në M15,
+2020–22 në M30, 2025.07–26.09 me çmime M5). Simulatori u bë më i kujdesshëm: në qiririn ku
+mbushet limiti nuk llogaritet TP (renditja e çmimeve brenda qiririt nuk dihet). Kështu
+"retest më thellë 50%", që dukej PF 1.80 në M15, doli PF 1.07 me çmime M5.
+
+| Ndryshimi | Rezultati |
+|---|---|
+| TP 1R / 1.5R / 3R, TP në anën tjetër të range-it | win rate ndryshon, fitimi jo më i mirë |
+| SL më i gjerë (1.5$, 3$), soft stop me mbyllje M15 | më keq |
+| Retest më thellë (25%, 50%), retest me konfirmim mbylljeje | më keq me çmime M5 |
+| Trend më i fortë (pjerrësia e mesatares, SMA20/200 dakord) | jo i qëndrueshëm |
+| Qiri thyerjeje i fortë, sweep i likuiditetit 12h/24h, premium/discount ditor | heq fitime sa humbje |
+| Filtër volumi (tick volume) në thyerje ose sweep | më pak trade, jo më mirë për rrezikun |
+| Mbajtje 4h ose 24h, mbyllje e pjesshme në 1R + BE | jo më mirë |
+| Rrezik i reduktuar gjatë drawdown-it | njësoj si rrezik fiks më i ulët |
+| **Pa qiririn 9PM (Asia)** | **më mirë në të 4 periudhat** |
+
+Për çdo qiri H4 (PF në 4 periudhat): 9AM 1.54 / 1.38 / 1.66 / 1.22, 1PM 2.10 / 1.21 / 1.23 / 1.61,
+**9PM 1.12 / 0.94 / 0.87 / 1.10**. Setup-et e Asias sjellin rreth 0R, por një të katërtën e humbjeve.
+Në Asia likuiditeti është i hollë: sweep-i shpesh është fillimi i lëvizjes, jo kthimi.
+Qiriri 9PM mbetet pjesë e range-it të 1AM; pesë qirinjtë e tjerë tregtojnë kur vjen setup-i.
+`InpSkipAsia = false` e kthen si në v1.06.
+
+| 2023.01–2026.09, 0.5% (simulim) | Trade | Humbje | Win | PF | Total | Fitimi | DD |
+|---|---|---|---|---|---|---|---|
+| v1.06 | 1147 | 678 | 40.9% | 1.22 | +145R | +101% | 10.0% |
+| **v1.07** | 899 | **513** | 42.9% | **1.30** | +149R | +106% | 11.2% |
+
+Fitimi mbetet i njëjtë me **165 trade humbëse më pak**. Drawdown-i maksimal nuk bie, sepse vjen nga seritë
+e humbjeve të qirinjve të tjerë; atë e ul vetëm rreziku: 0.3% jep rreth 6–7% DD, 0.25% rreth 5.5%.
 
 ### v1.06: pa retest kundër trendit
 

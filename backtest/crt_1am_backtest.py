@@ -56,13 +56,17 @@ ANYTIME = dict(ACTIVE, skip_hours=(), models={n: None for n in MODELS})
 PRO24 = dict(ANYTIME, entry="retest", retest_sec=4 * 3600)
 
 
-def pro24_set(per_candle=True, reentry=True, selective=False):
-    """CRT_1AM_PRO24 v1.06 as a list of independent runs: one position per
+def pro24_set(per_candle=True, reentry=True, selective=False, skip_asia=True):
+    """CRT_1AM_PRO24 v1.07 as a list of independent runs: one position per
     H4 candle (each candle its own run), re-entry, no retest against the
-    trend, optionally the Selective model (off by default: it trades fixed
-    key times). The v1.05 daily loss limit is not simulated."""
+    trend, no 9PM (Asia) candle, optionally the Selective model (off by
+    default: it trades fixed key times). The v1.05 daily loss limit is not
+    simulated."""
     base = dict(PRO24, reentry=reentry, bias_first=True)
-    cfgs = [dict(base, models={n: None}) for n in MODELS] if per_candle else [base]
+    names = [n for n in MODELS if not (skip_asia and n == "9PM")]
+    if not per_candle:
+        base["models"] = {n: None for n in names}
+    cfgs = [dict(base, models={n: None}) for n in names] if per_candle else [base]
     if selective:
         cfgs.append(dict(SELECTIVE, skip_hours=()))
     return cfgs
@@ -79,7 +83,7 @@ class ModelDay:
         self.done = False
         self.allow = 0
         self.rng_hi = self.rng_lo = self.crt_open = self.pd_mid = self.atr = 0.0
-        self.prev_close = self.trend_avg = 0.0
+        self.prev_close = self.trend_avg = self.prev_mid = 0.0
         self.swept_hi = self.swept_lo = False
         self.sweep_hi = self.sweep_lo = 0.0
         self.ob_sell_low = self.ob_buy_high = 0.0
@@ -103,6 +107,11 @@ def run(bars, cfg):
                 b[3] = min(b[3], l)
                 b[4] = c
     d1_days = sorted(d1)
+    # tick volume per entry-TF bar (cfg["vol"]: input bar time -> tick volume)
+    tfvol = defaultdict(float)
+    for t0, v in cfg.get("vol", {}).items():
+        tfvol[t0 - t0 % M15] += v
+    vol_hist = []                    # tick volumes of the last vol_days of closed entry-TF bars
     d1_index = {d: i for i, d in enumerate(d1_days)}
 
     eng = Engine()
@@ -132,6 +141,7 @@ def run(bars, cfg):
         d.rng_lo = min(b[3] for b in rng)
         d.crt_open = first[1]
         d.pd_mid = ((prev[2] + prev[3]) if cfg["pd"] == "prev" else (d.rng_hi + d.rng_lo)) / 2.0
+        d.prev_mid = (prev[2] + prev[3]) / 2.0
         prev_dir = 1 if prev[4] > prev[1] else 2 if prev[4] < prev[1] else 0
         closes = [d1[x][4] for x in d1_days[max(0, i - cfg["sma"]):i]]
         d.prev_close = prev[4]
@@ -141,6 +151,12 @@ def run(bars, cfg):
             c2 = [d1[x][4] for x in d1_days[max(0, i - cfg["sma2"]):i]]
             dir2 = 1 if prev[4] > sum(c2) / len(c2) else 2
             sma_dir = sma_dir if dir2 == sma_dir else 0
+        if cfg.get("slope") and sma_dir:
+            # the average itself must point the same way (k days ago vs now)
+            k = cfg["slope"]
+            c_old = [d1[x][4] for x in d1_days[max(0, i - k - cfg["sma"]):max(0, i - k)]]
+            if c_old and (sma_dir == 1) != (d.trend_avg > sum(c_old) / len(c_old)):
+                sma_dir = 0
         rngs = [d1[x][2] - d1[x][3] for x in d1_days[max(0, i - 14):i]]
         d.atr = sum(rngs) / len(rngs)
         if cfg["bias"] == "none":
@@ -188,6 +204,8 @@ def run(bars, cfg):
             return "OHLC"
         if cfg["pd"] != "off" and ((direction == 2 and bid < d.pd_mid) or (direction == 1 and ask > d.pd_mid)):
             return "premium/discount"
+        if cfg.get("pd_day") and ((direction == 2 and bid < d.prev_mid) or (direction == 1 and ask > d.prev_mid)):
+            return "day premium/discount"
         sl = extreme - cfg["sl_buffer"] if direction == 1 else extreme + cfg["sl_buffer"]
         risk = entry - sl if direction == 1 else sl - entry
         if risk <= 0:
@@ -238,6 +256,10 @@ def run(bars, cfg):
             avg_rng = sum(recent) / len(recent) if recent else 0.0
             spike = cfg.get("spike", 0) > 0 and avg_rng > 0 and closed[2] - closed[3] > cfg["spike"] * avg_rng
             recent.append(closed[2] - closed[3])
+            if cfg.get("vol"):
+                vol_hist.append(tfvol[closed[0]])
+                if len(vol_hist) > cfg.get("vol_days", 5) * DAY // M15:
+                    vol_hist.pop(0)
             if len(recent) > 20:
                 recent.pop(0)
             for name in cfg["models"]:
@@ -259,6 +281,34 @@ def run(bars, cfg):
                     if not sig:
                         continue
                     funnel["OB breaks"] += 1
+                    if cfg.get("min_disp") and avg_rng > 0 and bh - bl < cfg["min_disp"] * avg_rng:
+                        skips["weak break"] += 1
+                        continue
+                    if cfg.get("min_vol") or cfg.get("min_sweep_vol"):
+                        n_hist = len(vol_hist)
+                        avg_v = sum(vol_hist) / n_hist if n_hist else 0.0
+                        ob_t = d.ob_sell_t if direction == 2 else d.ob_buy_t
+                        if avg_v > 0 and ((cfg.get("min_vol") and tfvol[closed[0]] < cfg["min_vol"] * avg_v) or
+                                          (cfg.get("min_sweep_vol") and tfvol[ob_t] < cfg["min_sweep_vol"] * avg_v)):
+                            skips["low volume"] += 1
+                            if direction == 2:
+                                d.ob_sell_t = float("inf")
+                            else:
+                                d.ob_buy_t = float("inf")
+                            continue
+                    if cfg.get("liq_bars"):
+                        # the sweep must also take the highest high / lowest low of the bars before the range
+                        ext = d.sweep_hi if direction == 2 else d.sweep_lo
+                        lo_k = d.key + off - cfg["liq_bars"] * M15
+                        prior = [m15[x] for x in range(lo_k, d.key + off - defs[name][1] * CANDLE, M15) if x in m15]
+                        if prior and ((direction == 2 and ext <= max(b[2] for b in prior)) or
+                                      (direction == 1 and ext >= min(b[3] for b in prior))):
+                            skips["no liquidity"] += 1
+                            if direction == 2:
+                                d.ob_sell_t = float("inf")
+                            else:
+                                d.ob_buy_t = float("inf")
+                            continue
                     extreme = max(d.sweep_hi, bh) if direction == 2 else min(d.sweep_lo, bl)
                     if cfg.get("entry") == "retest" and not spike:
                         # limit at the broken order-block level, valid for retest_sec
@@ -267,6 +317,7 @@ def run(bars, cfg):
                             res = "bias"                          # never wait for a retest against the bias
                         elif pending is None and pos is None:
                             level = d.ob_sell_low if direction == 2 else d.ob_buy_high
+                            level += cfg.get("retest_frac", 0.0) * (extreme - level)   # deeper limit
                             pending = dict(name=name, d=d, dir=direction, level=level, extreme=extreme,
                                            sig_ny=ny + M15, expires=t + cfg.get("retest_sec", 7200))
                     else:
@@ -290,6 +341,24 @@ def run(bars, cfg):
                     if not d.swept_lo:
                         funnel["low sweeps"] += 1
                     d.swept_lo, d.sweep_lo, d.ob_buy_high, d.ob_buy_t = True, bl, bh, closed[0]
+            cc = closed[4]
+            # retest confirmation: after the touch, an entry-TF close back on the right side of the level
+            if pending is not None and pos is None and pending.get("touched"):
+                pd_ = pending
+                if (pd_["dir"] == 2 and cc < pd_["level"]) or (pd_["dir"] == 1 and cc > pd_["level"]):
+                    res = try_enter(pd_["name"], pd_["d"], pd_["dir"], pd_["sig_ny"], bar, pd_["extreme"])
+                    pending = None
+                    if isinstance(res, dict):
+                        pos = res
+                        pd_["d"].done = not cfg.get("reentry")
+                    else:
+                        skips[res] += 1
+            # soft stop: an entry-TF close beyond soft_stop R against the trade closes it at the next open
+            elif pos is not None and cfg.get("soft_stop") and t - pos["t_in"] >= M15:
+                lim = pos["entry"] - cfg["soft_stop"] * pos["risk"] if pos["dir"] == 1 else pos["entry"] + cfg["soft_stop"] * pos["risk"]
+                if (pos["dir"] == 1 and cc < lim) or (pos["dir"] == 2 and cc + spread > lim):
+                    close(pos, o if pos["dir"] == 1 else o + spread, t, "soft")
+                    pos = None
         cur_m15 = k
 
         # ---- retest limit order --------------------------------------------
@@ -300,12 +369,15 @@ def run(bars, cfg):
             elif (pd_["dir"] == 2 and h + spread > pd_["extreme"]) or (pd_["dir"] == 1 and l < pd_["extreme"]):
                 pending = None                                        # new extreme first: setup gone
                 skips["retest invalid"] += 1
+            elif cfg.get("retest_confirm") and ((pd_["dir"] == 2 and h >= pd_["level"]) or (pd_["dir"] == 1 and l + spread <= pd_["level"])):
+                pd_["touched"] = True                                 # wait for the close back
             elif (pd_["dir"] == 2 and h >= pd_["level"]) or (pd_["dir"] == 1 and l + spread <= pd_["level"]):
                 fill = max(o, pd_["level"]) if pd_["dir"] == 2 else min(o + spread, pd_["level"])
                 res = try_enter(pd_["name"], pd_["d"], pd_["dir"], pd_["sig_ny"], bar, pd_["extreme"], price=fill)
                 pending = None
                 if isinstance(res, dict):
                     pos = res
+                    pos["fresh"] = True       # bar order unknown: no target on the fill bar
                     pd_["d"].done = not cfg.get("reentry")
                 else:
                     skips[res] += 1
@@ -333,8 +405,11 @@ def run(bars, cfg):
                 pos = None
                 continue
 
+        fresh = pos.pop("fresh", False)
         # ---- best / worst excursion so far, in R ---------------------------
-        if pos["dir"] == 1:
+        if fresh:
+            pass
+        elif pos["dir"] == 1:
             pos["mfe"] = max(pos["mfe"], (h - pos["entry"]) / pos["risk"])
             pos["mae"] = min(pos["mae"], (l - pos["entry"]) / pos["risk"])
         else:
@@ -346,31 +421,31 @@ def run(bars, cfg):
             if l <= pos["sl"]:
                 close(pos, pos["sl"], t, "SL")
                 pos = None
-            elif h >= pos["tp"]:
+            elif h >= pos["tp"] and not fresh:
                 close(pos, pos["tp"], t, "TP")
                 pos = None
         else:
             if h + spread >= pos["sl"]:
                 close(pos, pos["sl"], t, "SL")
                 pos = None
-            elif l + spread <= pos["tp"]:
+            elif l + spread <= pos["tp"] and not fresh:
                 close(pos, pos["tp"], t, "TP")
                 pos = None
         # ---- partial close at +pc_r and stop to break-even (next bar on) -
-        if pos is not None and cfg.get("pc_r", 0) > 0 and "part" not in pos:
+        if pos is not None and cfg.get("pc_r", 0) > 0 and "part" not in pos and not fresh:
             trig = pos["entry"] + cfg["pc_r"] * pos["risk"] if pos["dir"] == 1 else pos["entry"] - cfg["pc_r"] * pos["risk"]
             if (pos["dir"] == 1 and h >= trig) or (pos["dir"] == 2 and l + spread <= trig):
                 pos["part"] = cfg["pc_frac"] * cfg["pc_r"]
                 pos["sl"] = pos["entry"]
         # ---- trailing stop after +trail_start R, trail_dist R behind -------
-        if pos is not None and cfg.get("trail_start", 0) > 0:
+        if pos is not None and cfg.get("trail_start", 0) > 0 and not fresh:
             dist = cfg["trail_dist"] * pos["risk"]
             if pos["dir"] == 1 and h - pos["entry"] >= cfg["trail_start"] * pos["risk"]:
                 pos["sl"] = max(pos["sl"], h - dist)
             elif pos["dir"] == 2 and pos["entry"] - (l + spread) >= cfg["trail_start"] * pos["risk"]:
                 pos["sl"] = min(pos["sl"], l + spread + dist)
         # ---- break-even after +be_r (from the next bar on) ---------------
-        if pos is not None and cfg.get("be_r", 0) > 0:
+        if pos is not None and cfg.get("be_r", 0) > 0 and not fresh:
             trig = pos["entry"] + cfg["be_r"] * pos["risk"] if pos["dir"] == 1 else pos["entry"] - cfg["be_r"] * pos["risk"]
             if (pos["dir"] == 1 and h >= trig) or (pos["dir"] == 2 and l + spread <= trig):
                 pos["sl"] = max(pos["sl"], pos["entry"]) if pos["dir"] == 1 else min(pos["sl"], pos["entry"])
