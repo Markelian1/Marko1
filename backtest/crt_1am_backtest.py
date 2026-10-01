@@ -90,6 +90,7 @@ class ModelDay:
         self.ob_sell_low = self.ob_buy_high = 0.0
         self.ob_sell_t = self.ob_buy_t = 0
         self.range_vol = 1.0
+        self.loc = {}
 
 
 def run(bars, cfg):
@@ -116,6 +117,18 @@ def run(bars, cfg):
     tfvol = dict(tfvol)
     vol_hist = []                    # tick volumes of the last vol_days of closed entry-TF bars
     d1_index = {d: i for i, d in enumerate(d1_days)}
+
+    # H4 EMA 20 / 50 by H4 bar start (server time), for the "local" direction tests
+    h4c = {}
+    for k in sorted(m15):
+        h4c[k - k % 14400] = m15[k][4]
+    h4ema = {}
+    e20 = e50 = None
+    for k in sorted(h4c):
+        c = h4c[k]
+        e20 = c if e20 is None else e20 + (c - e20) * 2 / 21
+        e50 = c if e50 is None else e50 + (c - e50) * 2 / 51
+        h4ema[k] = 1 if e20 > e50 else 2
 
     eng = Engine()
     d1_fed = 0                       # number of daily bars fed to the engine
@@ -146,6 +159,12 @@ def run(bars, cfg):
         d.pd_mid = ((prev[2] + prev[3]) if cfg["pd"] == "prev" else (d.rng_hi + d.rng_lo)) / 2.0
         d.prev_mid = (prev[2] + prev[3]) / 2.0
         prev_dir = 1 if prev[4] > prev[1] else 2 if prev[4] < prev[1] else 0
+        # local direction (tests): previous day candle, range candle(s), H4 EMA 20/50, last 24h
+        d.loc = {"prevday": prev_dir,
+                 "range": 1 if rng[-1][4] > rng[0][1] else 2,
+                 "h4ema": h4ema.get(crt_srv - 14400, 0)}
+        old = m15.get(crt_srv - DAY - M15) or m15.get(crt_srv - DAY - 2 * M15)
+        d.loc["mom24"] = 0 if old is None else (1 if rng[-1][4] > old[4] else 2)
         closes = [d1[x][4] for x in d1_days[max(0, i - cfg["sma"]):i]]
         d.prev_close = prev[4]
         d.trend_avg = sum(closes) / len(closes) if closes else 0.0
@@ -193,6 +212,11 @@ def run(bars, cfg):
             return "key time"
         if not d.allow & direction:
             return "bias"
+        lf = cfg.get("local")
+        if lf:
+            want = direction if not lf.endswith("_opp") else 3 - direction
+            if d.loc.get(lf.replace("_opp", ""), 0) != want:
+                return "local"
         if pos is not None:
             return "position open"
         ny_t = t - off

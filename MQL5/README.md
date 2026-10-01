@@ -222,7 +222,43 @@ me shumë pak trade (~20 në vit) për ta konsideruar të provuar. Avantazhi i q
 
 # GOLD MULTI PRO (MT5): EA e re me 6 strategji dhe analizë për çdo trade
 
-Skedari: `Experts/GOLD_MULTI_PRO.mq5` (v1.00), magic bazë **880100**.
+Skedari: `Experts/GOLD_MULTI_PRO.mq5` (v1.01), magic bazë **880100**.
+
+**Testi MT5 i v1.00** (2023.01.01–2026.09.26, 0.1%): 1576 trade, PF 1.31, **+27.4%**, DD **1.87%**
+(simulimi priste 1578 trade, +25.5%, DD 2.02%).
+
+### v1.01: foto të çdo trade-i dhe pse blen kur range-i shkon poshtë
+
+- Çdo trade i mbyllur vizatohet mbi grafik si "position tool": kuti e kuqe nga hyrja te SL, kuti e gjelbër
+  nga hyrja te TP, vijë nga hyrja te dalja dhe rezultati (p.sh. `CRT 5AM +1.98R TP`).
+- `InpShots` ruan foton PNG të grafikut për çdo trade: kur mbyllet (parazgjedhje), kur hapet dhe mbyllet,
+  ose vetëm humbjet. Kjo punon në **Visual mode** të testerit dhe në demo/live.
+  - Në tester fotot ruhen te `Tester\Agent-127.0.0.1-3000\MQL5\Files\GOLD_MULTI_PRO_shots`.
+  - Në demo/live ruhen te `MQL5\Files\GOLD_MULTI_PRO_shots`.
+  - Rruga e saktë del në Journal në fillim të testit ("Screenshots: ...").
+  - Emri i çdo fotoje ka datën, pozicionin, strategjinë, drejtimin dhe rezultatin.
+- Ditari `GOLD_MULTI_PRO_journal.csv` ka tani edhe kolonat "pozicioni", "foto hyrja" dhe "foto dalja",
+  krahas strategjisë dhe arsyes së hyrjes.
+
+**Pse blen kur range-i shkon poshtë?** Kjo është vetë logjika e CRT-së:
+1. Range-i shitet dhe low-i i tij fshihet: merren stop-et e blerësve.
+2. Kur një qiri mbyllet përsëri mbi order block-un, likuiditeti i marrë përdoret për të shkuar lart.
+3. Robotti blen vetëm kur trendi ditor është lart.
+
+U testua nëse ndihmon kërkesa që edhe drejtimi lokal të jetë lart:
+
+| CRT H4 | 2022–24 | 2024–26 | 2020–22 | 2025–26 (M5) |
+|---|---|---|---|---|
+| v1.10 / GOLD MULTI | PF 1.32, +74R | PF 1.19, +68R | PF 1.21, +35R | PF 1.24, +50R |
+| + dita e kaluar në të njëjtin drejtim | PF 1.36, +50R | PF 1.19, +39R | PF 1.05, +5R | PF 1.09, +11R |
+| + qiriri i range-it në të njëjtin drejtim | PF 1.24, +15R | PF 1.16, +14R | PF 1.62, +20R | PF 1.14, +7R |
+| + qiriri i range-it në drejtim të kundërt | PF 1.35, +59R | PF 1.21, +53R | PF 1.11, +15R | PF 1.27, +43R |
+| + EMA 20/50 H4 në të njëjtin drejtim | PF 1.38, +66R | PF 1.11, +28R | PF 1.08, +10R | PF 1.07, +11R |
+| + 24 orët e fundit në të njëjtin drejtim | PF 1.50, +42R | PF 1.18, +26R | PF 1.33, +19R | PF 1.22, +18R |
+
+Pjesa më e madhe e fitimit vjen pikërisht nga blerjet pas një range-i që u shit. Filtrat heqin 40–80% të
+fitimit, ndërsa PF-ja mbetet afërsisht e njëjtë. Humbjet e 23.09.2026 erdhën sepse trendi ditor ishte ende
+lart. Të nesërmen trendi u kthye poshtë dhe roboti shiti (CRT 9AM SELL, TP).
 
 ## Si u ndërtua: kërkim në 844 strategji
 

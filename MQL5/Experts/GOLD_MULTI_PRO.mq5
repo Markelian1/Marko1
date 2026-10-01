@@ -45,9 +45,18 @@
 // Friday close 16:00 NY. Simulation 2020.04-2026.09 at 0.1%: about 2440
 // trades, +38%, max DD 2.0% (setups 1-3 alone: +28%, max DD 2.3%).
 // No setup wins every trade; the stop loss keeps a wrong idea small.
+//
+// v1.00 in MT5 (2023.01-2026.09, 0.1%): 1576 trades, PF 1.31, +27.4%, max DD 1.9%.
+// v1.01: every closed trade is drawn like a position tool (risk box, target
+//   box, line to the exit, result) and, in the visual tester or live, saved
+//   as a PNG screenshot (InpShots); the journal gets the position id and the
+//   screenshot names. Tested and not used: buying only when the previous
+//   day, the range candle, H4 EMA 20/50 or the last 24h also point up. A
+//   CRT buy comes after the range was sold and its low swept; those trades
+//   are most of the profit (filters cut 40-80% of it, PF unchanged).
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.00"
+#property version   "1.01"
 #property description "GOLD MULTI PRO: six tested XAUUSD setups (CRT H4, daily CRT, inside day, displacement, Bollinger and CCI pullbacks), every trade with its reason."
 
 #include <Trade/Trade.mqh>
@@ -95,6 +104,14 @@ enum ENUM_REJECT
    REJ_DAYLOSS
 };
 #define REJECTS 17   // number of ENUM_REJECT values
+
+enum ENUM_SHOTS
+{
+   SHOTS_OFF    = 0, // Off
+   SHOTS_CLOSE  = 1, // Every trade, when it closes (entry, SL, TP and exit drawn)
+   SHOTS_BOTH   = 2, // Every trade, when it opens and when it closes
+   SHOTS_LOSSES = 3  // Only losing trades, when they close
+};
 
 enum ENUM_CRT_ENTRY
 {
@@ -163,6 +180,9 @@ input bool InpShowPanel = true;  // Show status panel
 input bool InpDraw      = true;  // Draw ranges, sweeps and entries
 input bool InpVerbose   = true;  // Print setups to the journal
 input bool InpJournal   = true;  // Write every trade with its reason to Common\Files\GOLD_MULTI_PRO_journal.csv
+input ENUM_SHOTS InpShots = SHOTS_CLOSE; // Chart screenshot of every trade (visual tester or live), MQL5\Files\GOLD_MULTI_PRO_shots
+input int  InpShotWidth  = 1600; // Screenshot width (pixels)
+input int  InpShotHeight = 900;  // Screenshot height (pixels)
 
 input group "6. OPTIMIZATION"
 input int  InpOptMinTrades = 30; // Min trades for the "Custom max" score
@@ -310,6 +330,7 @@ int     g_rtPlaced = 0, g_rtFilled = 0, g_rtExpired = 0, g_rtInvalid = 0;
 void   JournalOpen(ulong posId, int s, int m, int dir, double entry, double sl, double tp, double extreme, double spread, string why);
 string SlotTitle(int s);
 int    XOf(ulong magic);
+void   ShotAtOpen(ulong posId, string tag, double sl, double tp);
 string MarketContext();
 
 // H4 indicator setups (4. displacement, 5. Bollinger pullback, 6. CCI pullback)
@@ -1032,6 +1053,7 @@ bool TryEnter(int s, int m, int dir, datetime sigNY, double extreme)
                     PriceText(g_md[s][m].rngLow), PriceText(g_md[s][m].rngHigh), NYText(sigNY)));
    Log("ARSYEJA: " + why);
    DrawLabel(TimeCurrent(), entry, tag, dir == 1 ? clrAqua : clrMagenta, dir == 2, why);
+   ShotAtOpen(g_trade.ResultOrder(), tag, sl, tp);
    return true;
 }
 
@@ -1442,6 +1464,7 @@ bool XEnter(int x, int dir, double slRaw, double tpPrice, double rr, string why)
                     tp > 0.0 ? PriceText(tp) : "signal"));
    Log("ARSYEJA: " + full);
    DrawLabel(TimeCurrent(), fill, tag, dir == 1 ? clrAqua : clrMagenta, dir == 2, full);
+   ShotAtOpen(g_trade.ResultOrder(), tag, sl, tp);
    return true;
 }
 
@@ -1755,6 +1778,76 @@ void PrintTradeSummary()
 }
 
 // ============================================================================
+// SCREENSHOTS (visual tester and live): the chart of every trade as a PNG in
+// MQL5\Files\GOLD_MULTI_PRO_shots (in the tester: Tester\Agent-...\MQL5\Files)
+// ============================================================================
+
+bool ShotsOn() { return InpShots != SHOTS_OFF && !g_silent && !g_noChart; }
+
+string SafeName(string v)
+{
+   StringReplace(v, " ", "_");
+   StringReplace(v, ":", "-");
+   StringReplace(v, "/", "-");
+   return v;
+}
+
+// Zooms out until the bars since `from` fit, takes the screenshot, restores the zoom.
+string Shot(datetime from, string tag)
+{
+   if(!ShotsOn())
+      return "";
+   long scale0 = ChartGetInteger(0, CHART_SCALE);
+   int  need   = (int)((TimeCurrent() - from) / PeriodSeconds(_Period)) + 30;
+   ChartSetInteger(0, CHART_AUTOSCROLL, true);
+   for(int sc = (int)scale0; sc >= 0; sc--)
+   {
+      ChartSetInteger(0, CHART_SCALE, sc);
+      ChartNavigate(0, CHART_END, 0);
+      ChartRedraw(0);
+      if(ChartGetInteger(0, CHART_WIDTH_IN_BARS) >= need)
+         break;
+   }
+   string name = "GOLD_MULTI_PRO_shots\\" + SafeName(TimeToString(TimeCurrent(), TIME_DATE | TIME_MINUTES) + "_" + tag) + ".png";
+   bool ok = ChartScreenShot(0, name, InpShotWidth, InpShotHeight, ALIGN_RIGHT);
+   ChartSetInteger(0, CHART_SCALE, scale0);
+   ChartRedraw(0);
+   if(!ok)
+   {
+      Log("Screenshot failed: " + name + ", error " + IntegerToString(GetLastError()));
+      return "";
+   }
+   return name;
+}
+
+// The trade on the chart like a position tool: risk box (entry to SL), target
+// box (entry to TP), a line from the entry to the exit and the result.
+void DrawTrade(datetime tIn, datetime tOut, int dir, double entry, double sl, double tp, double exitPrice, double r, string text)
+{
+   if(!DrawingOn())
+      return;
+   datetime t2 = tOut > tIn ? tOut : tIn + PeriodSeconds(_Period);
+   DrawBox(tIn, t2, entry, sl, C'90,25,25');
+   if(tp > 0.0)
+      DrawBox(tIn, t2, entry, tp, C'20,70,35');
+   if(exitPrice > 0.0)
+   {
+      string name = NewObjName("X");
+      if(ObjectCreate(0, name, OBJ_TREND, 0, tIn, entry, t2, exitPrice))
+      {
+         ObjectSetInteger(0, name, OBJPROP_COLOR, r > 0.0 ? clrLime : clrRed);
+         ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DOT);
+         ObjectSetInteger(0, name, OBJPROP_WIDTH, 2);
+         ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false);
+         ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+      }
+      DrawLabel(t2, exitPrice, text, r > 0.0 ? clrLime : clrRed, dir == 1 ? r > 0.0 : r <= 0.0);
+   }
+}
+
+
+// ============================================================================
 // TRADE JOURNAL (CSV with a description of every trade)
 // ============================================================================
 
@@ -1780,6 +1873,7 @@ struct JournalRec
    double   mfe;      // best excursion so far (R)
    double   mae;      // worst excursion so far (R)
    string   why;      // the analysis that opened the trade
+   string   shotOpen; // screenshot at the entry ("" = none)
 };
 
 JournalRec g_jr[];
@@ -1809,7 +1903,7 @@ void JournalStart()
       FileWrite(g_jFile, "nr", "hyrja (server)", "hyrja (NY)", "dita", "strategjia", "drejtimi", "entry", "SL", "TP",
                 "SL $", "rezultati R", "dalja", "minuta", "max ne favor R", "max kunder R", "range low", "range high",
                 "sweep", "sweep pertej range $", "hyrja ne range %", "trendi % nga mesatarja", "SL / ATR ditore",
-                "spread", "lloji", "pershkrimi", "arsyeja e hyrjes (analiza)");
+                "spread", "lloji", "pershkrimi", "arsyeja e hyrjes (analiza)", "pozicioni", "foto hyrja", "foto dalja");
 }
 
 void JournalStop()
@@ -1840,6 +1934,7 @@ void JournalOpen(ulong posId, int s, int m, int dir, double entry, double sl, do
    g_jr[n].extreme  = extreme;
    g_jr[n].spread   = spread;
    g_jr[n].why      = why;
+   g_jr[n].shotOpen = "";
    if(s >= 0)
    {
       g_jr[n].rngLow   = g_md[s][m].rngLow;
@@ -1859,6 +1954,21 @@ void JournalOpen(ulong posId, int s, int m, int dir, double entry, double sl, do
    }
    g_jr[n].mfe      = 0.0;
    g_jr[n].mae      = 0.0;
+}
+
+// Entry screenshot (SHOTS_BOTH) with the SL / TP boxes of the new trade.
+void ShotAtOpen(ulong posId, string tag, double sl, double tp)
+{
+   if(InpShots != SHOTS_BOTH || !ShotsOn())
+      return;
+   int i = ArraySize(g_jr) - 1;
+   if(i < 0 || g_jr[i].posId != posId)
+      return;
+   datetime t = TimeCurrent();
+   DrawBox(t, t + 4 * PeriodSeconds(_Period), g_jr[i].entry, sl, C'90,25,25');
+   if(tp > 0.0)
+      DrawBox(t, t + 4 * PeriodSeconds(_Period), g_jr[i].entry, tp, C'20,70,35');
+   g_jr[i].shotOpen = Shot(t - 60 * PeriodSeconds(_Period), "pos" + IntegerToString((long)posId) + "_" + tag + "_open");
 }
 
 // Best and worst excursion of the open trades, every tick.
@@ -1890,7 +2000,7 @@ string LossText(string kind)
    return "mbyllje me kohe ose me sinjal ne fitim";
 }
 
-void JournalClose(ulong posId, double r, long reason)
+void JournalClose(ulong posId, double r, long reason, double exitPrice)
 {
    int i = -1;
    for(int k = ArraySize(g_jr) - 1; k >= 0; k--)
@@ -1960,6 +2070,12 @@ void JournalClose(ulong posId, double r, long reason)
    if(tags != "")
       desc += " |" + StringSubstr(tags, 2);
 
+   string exitTxt = reason == DEAL_REASON_SL ? "SL" : reason == DEAL_REASON_TP ? "TP" : "kohe/sinjal";
+   DrawTrade(j.tIn, tOut, j.dir, j.entry, j.sl, j.tp, exitPrice, r, StringFormat("%s %+.2fR %s", strat, r, exitTxt));
+   string shot = "";
+   if(InpShots == SHOTS_CLOSE || InpShots == SHOTS_BOTH || (InpShots == SHOTS_LOSSES && r < 0.0))
+      shot = Shot(j.tIn - 40 * PeriodSeconds(_Period),
+                  "pos" + IntegerToString((long)posId) + "_" + strat + "_" + side + StringFormat("_%+.1fR_", r) + exitTxt);
    string why = j.why;
    StringReplace(why, ",", ";");          // the file is comma separated
    g_jCount++;
@@ -1969,7 +2085,8 @@ void JournalClose(ulong posId, double r, long reason)
              reason == DEAL_REASON_SL ? "SL" : reason == DEAL_REASON_TP ? "TP" : "kohe",
              IntegerToString((int)MathRound(minutes)), F2(j.mfe), F2(j.mae), F2(j.rngLow), F2(j.rngHigh),
              F2(j.extreme), F2(depth), IntegerToString((int)MathRound(pos * 100.0)), F2(j.trendPct),
-             j.atr > 0.0 ? F2(j.risk / j.atr) : "", F2(j.spread), kind, desc, why);
+             j.atr > 0.0 ? F2(j.risk / j.atr) : "", F2(j.spread), kind, desc, why,
+             IntegerToString((long)posId), j.shotOpen, shot);
    if(!MQLInfoInteger(MQL_TESTER))
       FileFlush(g_jFile);
 }
@@ -2011,7 +2128,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans, const MqlTradeRequest 
    double r      = money / g_risk[i].riskMoney;
    long   reason = HistoryDealGetInteger(trans.deal, DEAL_REASON);
    RemoveRisk(i);
-   JournalClose(posId, r, reason);
+   JournalClose(posId, r, reason, HistoryDealGetDouble(trans.deal, DEAL_PRICE));
 
    if(slot >= 0)
    {
@@ -2071,7 +2188,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "GOLD MULTI PRO v1.00  |  " + _Symbol + "  |  " +
+   string s = "GOLD MULTI PRO v1.01  |  " + _Symbol + "  |  " +
               (g_ddStopped ? "STOPPED: MAX DRAWDOWN (restart with InpResetDDStop = true)" : InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
@@ -2244,7 +2361,7 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += ModelName(k, m) + " ";
-      Log(StringFormat("GOLD MULTI PRO v1.00 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("GOLD MULTI PRO v1.01 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
@@ -2253,8 +2370,8 @@ int OnInit()
       if(XOn(x))
          xl += StringFormat("%s (magic %s)  ", g_xName[x], IntegerToString((long)XMagic(x)));
    if(xl != "")
-      Log("GOLD MULTI PRO v1.00 | H4 setups: " + xl);
-   Log(StringFormat("GOLD MULTI PRO v1.00 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+      Log("GOLD MULTI PRO v1.01 | H4 setups: " + xl);
+   Log(StringFormat("GOLD MULTI PRO v1.01 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 
@@ -2266,6 +2383,10 @@ int OnInit()
    g_jCount = 0;
    JournalStart();
    DDInit();
+   if(ShotsOn())
+      Log("Screenshots: " + TerminalInfoString(TERMINAL_DATA_PATH) + "\\MQL5\\Files\\GOLD_MULTI_PRO_shots");
+   else if(InpShots != SHOTS_OFF && MQLInfoInteger(MQL_TESTER))
+      Log("Screenshots need the visual mode of the Strategy Tester (Visual mode with the display of charts).");
 
    g_ready = D1Update();
    for(int k = 0; k < SLOTS; k++)
