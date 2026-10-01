@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Trade journal with a description of every trade, losses first.
 
-Runs CRT_1AM_PRO24 (or a CRT_1AM_EA mode) through crt_1am_backtest.py on an
+Runs CRT_1AM_PRO24 v1.03 (or a CRT_1AM_EA mode) through crt_1am_backtest.py on an
 MT5 bar export and writes one CSV row per trade: when, which H4 candle,
 direction, prices, how far it went for and against the trade (MFE / MAE in
 R), the market context (trend, range, sweep, spread) and a short
@@ -20,7 +20,7 @@ import os
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from crt_1am_backtest import ACTIVE, PRO24, SELECTIVE, run
+from crt_1am_backtest import ACTIVE, SELECTIVE, pro24_set, run
 from crt_backtest import load_mt5
 
 NY = 7 * 3600
@@ -104,7 +104,7 @@ def main():
     args = ap.parse_args()
 
     bars, _ = load_mt5([args.mt5])
-    cfgs = {"pro24": [PRO24], "combined": [ACTIVE, SELECTIVE], "active": [ACTIVE], "selective": [SELECTIVE]}[args.mode]
+    cfgs = {"pro24": pro24_set(), "combined": [ACTIVE, SELECTIVE], "active": [ACTIVE], "selective": [SELECTIVE]}[args.mode]
     t0 = datetime.strptime(args.start, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()
     t1 = datetime.strptime(args.end, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()
     trades = sorted((t for c in cfgs for t in run(bars, c)[0] if t0 <= t["t_in"] < t1), key=lambda x: x["t_in"])

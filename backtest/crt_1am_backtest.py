@@ -56,6 +56,16 @@ ANYTIME = dict(ACTIVE, skip_hours=(), models={n: None for n in MODELS})
 PRO24 = dict(ANYTIME, entry="retest", retest_sec=4 * 3600)
 
 
+def pro24_set(per_candle=True, reentry=True, selective=True):
+    """CRT_1AM_PRO24 v1.03 as a list of independent runs: one position per
+    H4 candle (each candle its own run), re-entry, plus the Selective model."""
+    base = dict(PRO24, reentry=reentry)
+    cfgs = [dict(base, models={n: None}) for n in MODELS] if per_candle else [base]
+    if selective:
+        cfgs.append(dict(SELECTIVE, skip_hours=()))
+    return cfgs
+
+
 def hhmm_min(v):
     return (v // 100) * 60 + v % 100
 
@@ -263,7 +273,7 @@ def run(bars, cfg):
                         d.ob_buy_t = float("inf")
                     if isinstance(res, dict):
                         pos = res
-                        d.done = True
+                        d.done = not cfg.get("reentry")      # reentry: keep watching this candle
                         break
                     skips[res] += 1
                 if d.done:
@@ -292,7 +302,7 @@ def run(bars, cfg):
                 pending = None
                 if isinstance(res, dict):
                     pos = res
-                    pd_["d"].done = True
+                    pd_["d"].done = not cfg.get("reentry")
                 else:
                     skips[res] += 1
 

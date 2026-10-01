@@ -191,7 +191,7 @@ hyrja te thyerja e OB në M15, brenda strukturës kohore H4, në drejtimin e tre
 
 # CRT PRO24 (MT5): versioni 24 orë, pa orare fikse
 
-Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.02). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
+Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.03). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
 
 - Ndjek **të 6 qirinjtë H4** të ditës (1AM, 5AM, 9AM, 1PM, 5PM, 9PM New York).
 - Hyn **kur vjen setup-i**, në çfarëdo ore: sweep i range-it, pastaj një qiri M15 mbyllet përtej qiririt
@@ -225,6 +225,31 @@ U mbajt varianti më i thjeshtë dhe më i qëndrueshëm.
 PRO24 është pozitiv çdo vit (2023 +44R, 2024 +15R, 2025 +42R, 2026 +11R). Ka më shumë trade,
 por më pak fitim për trade dhe rreth dyfish më shumë drawdown se versioni me orare.
 Për të njëjtin drawdown si Combined, përdor rreth **0.3%** rrezik.
+
+### v1.03: më shumë hyrje
+
+Mënyrat e testuara për më shumë hyrje (kontroll në 2022–24, 2024–26 dhe 2020–22):
+
+| Ideja | Rezultati |
+|---|---|
+| **Një pozicion për çdo qiri H4** (secili qiri ka magic-un e vet) | ✅ më shumë trade dhe më shumë fitim |
+| **Rihyrje në të njëjtin qiri** pasi mbyllet trade-i | ✅ më shumë trade, fitim i njëjtë |
+| **+ Selective** (modeli i PDF-ve, magic +10) | ✅ edhe pak më shumë fitim |
+| Pa filtër trendi | ❌ dyfish trade, por PF 1.04 dhe DD dyfish |
+| Hyrje M5 | ❌ ndihmon një periudhë, dëmton tjetrën |
+
+Inputet e reja: `InpPerCandle`, `InpReentry`, `InpAddSelective` (të gjitha `true`).
+Selective ka key time të PDF-së. Kush do PRO24 pa asnjë orar, vendos `InpAddSelective = false`.
+
+Simulimi 2023.01.01–2026.09.26, 0.5% rrezik për trade:
+
+| | Trade | Në javë | PF | Fitimi | Max DD | Maks. të hapura |
+|---|---|---|---|---|---|---|
+| v1.02 | 922 | 4.0 | 1.29 | +107% | 9.8% | 1 |
+| v1.03 pa Selective | 1081 | 4.7 | 1.28 | +131% | 8.6% | 2 |
+| **v1.03 (fillestare)** | **1124** | **4.8** | **1.32** | **+161%** | **8.6%** | **3** |
+
+Me 3 trade të hapura njëkohësisht, rreziku i përbashkët mund të arrijë 1.5% (0.5% secili).
 
 ### v1.02: hyrje me retest (limit te niveli i OB-së)
 

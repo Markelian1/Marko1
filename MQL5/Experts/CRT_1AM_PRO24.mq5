@@ -14,6 +14,11 @@
 //     back to the order-block level (retest) and enters there; a new
 //     sweep extreme first cancels the setup (v1.02; market entry at the
 //     break is still an option)
+//   - v1.03, more entries: one position per H4 candle (each candle has
+//     its own magic number, so a 5AM trade can open while the 1AM trade
+//     is still running), a new setup in the same candle after a trade
+//     closes, and optionally the PDF Selective model (key times, M30,
+//     market entry) as a second strategy with magic +10
 //   - daily trend bias (previous close vs its 50-day average) and
 //     premium / discount of the range
 //   - SL beyond the sweep, TP 1:2, trade closed after 8 hours if still open
@@ -23,11 +28,13 @@
 //     against (in R) and a short description of the win or loss
 //
 // Tested on FP Trading XAUUSD 2023.01-2026.09 (simulation, 0.5% risk):
-// retest entry about 920 trades, PF 1.29, +107%, max DD 9.8%; market entry
-// (v1.00-v1.01) 1226 trades, PF 1.17, +71%, max DD 11.1%.
+//   v1.03 defaults (per candle + re-entry + Selective): ~1120 trades,
+//   PF 1.32, +161%, max DD 8.6%, up to 3 positions open at once
+//   v1.02 (one position, retest): 922 trades, PF 1.29, +107%, max DD 9.8%
+//   v1.01 (one position, market): 1226 trades, PF 1.17, +71%, max DD 11.1%
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.02"
+#property version   "1.03"
 #property description "CRT PRO24: the CRT_1AM_EA setup in every H4 candle, 24 hours, no fixed hours."
 
 #include <Trade/Trade.mqh>
@@ -96,6 +103,9 @@ input group "1. SETUP (New York time)"
 input bool InpTradeEnabled = true;  // Place trades (false = signals only)
 input int  InpNYOffset     = 7;     // Server time minus New York time (hours)
 input ENUM_TIMEFRAMES InpEntryTF = PERIOD_M15; // Entry / order-block timeframe (M5, M15, M30)
+input bool InpPerCandle    = true;  // One position per H4 candle (more entries, several trades open)
+input bool InpReentry      = true;  // New setup in the same candle after a trade closes
+input bool InpAddSelective = true;  // Also trade the PDF Selective model (key times, M30, magic +10)
 
 input group "2. BIAS / PREMIUM-DISCOUNT"
 input ENUM_CRT_BIAS InpBias     = BIAS_TREND;      // Higher-timeframe bias
@@ -181,7 +191,7 @@ struct TradeRisk
    double commission;
 };
 
-#define SLOTS 1
+#define SLOTS 2
 
 // One strategy configuration (Active, Selective or Custom) with its own
 // magic number, entry timeframe, candles, exits and positions.
@@ -196,7 +206,10 @@ struct Slot
    int             exitHHMM;
    int             maxHoldSec;
    int             maxDay;
-   bool            newsPause;    // not used in PRO24 (no fixed hours)
+   bool            newsPause;    // not used in PRO24
+   bool            retest;       // retest limit entry (else market at the break)
+   bool            perCandle;    // own magic (base + candle) and position per H4 candle
+   bool            reentry;      // keep watching the candle after a trade
    datetime        lastBar;      // open time of the entry-TF bar being formed
    bool            mOn[MODELS];
    int             mFrom[MODELS];
@@ -250,7 +263,7 @@ struct Pending
    datetime sigNY;
    datetime expires;  // server time
 };
-Pending g_pend;
+Pending g_pend[SLOTS][MODELS];
 int     g_rtPlaced = 0, g_rtFilled = 0, g_rtExpired = 0, g_rtInvalid = 0;
 void   JournalOpen(ulong posId, int s, int m, int dir, double entry, double sl, double tp, double extreme, double spread);
 string SlotTitle(int s);
@@ -329,10 +342,17 @@ double CalcLots(int dir, double entry, double sl)
 int SlotOf(ulong magic)
 {
    for(int s = 0; s < SLOTS; s++)
-      if(g_slot[s].on && g_slot[s].magic == magic)
+   {
+      if(!g_slot[s].on)
+         continue;
+      if(g_slot[s].perCandle ? (magic >= g_slot[s].magic && magic < g_slot[s].magic + MODELS) : magic == g_slot[s].magic)
          return s;
+   }
    return -1;
 }
+
+// Magic number of a slot's candle model.
+ulong MagicOf(int s, int m) { return g_slot[s].perCandle ? g_slot[s].magic + (ulong)m : g_slot[s].magic; }
 
 bool HasOpenPosition(ulong magic)
 {
@@ -703,7 +723,7 @@ bool TryEnter(int s, int m, int dir, datetime sigNY, double extreme)
       Skip(REJ_BIAS, tag + ": against HTF bias");
       return false;
    }
-   if(HasOpenPosition(g_slot[s].magic))
+   if(HasOpenPosition(MagicOf(s, m)))
    {
       Skip(REJ_POSITION, tag + ": position already open");
       return false;
@@ -713,7 +733,7 @@ bool TryEnter(int s, int m, int dir, datetime sigNY, double extreme)
       Skip(REJ_FRIDAY, tag + ": too close to the Friday close");
       return false;
    }
-   if(g_slot[s].maxDay > 0 && TradesToday(g_slot[s].magic) >= g_slot[s].maxDay)
+   if(g_slot[s].maxDay > 0 && TradesToday(MagicOf(s, m)) >= g_slot[s].maxDay)
    {
       Skip(REJ_MAX_TRADES, tag + ": max trades today");
       return false;
@@ -780,7 +800,7 @@ bool TryEnter(int s, int m, int dir, datetime sigNY, double extreme)
    }
 
    string cmt = "CRT24 " + g_mName[m];
-   g_trade.SetExpertMagicNumber(g_slot[s].magic);
+   g_trade.SetExpertMagicNumber(MagicOf(s, m));
    bool ok = dir == 1 ? g_trade.Buy(lots, _Symbol, entry, sl, tp, cmt)
                       : g_trade.Sell(lots, _Symbol, entry, sl, tp, cmt);
    uint rc = g_trade.ResultRetcode();
@@ -806,43 +826,58 @@ bool TryEnter(int s, int m, int dir, datetime sigNY, double extreme)
    return true;
 }
 
-// Every tick: fill, cancel or expire the waiting retest.
-void PendingCheck()
+bool AnyPending(int s)
 {
-   if(!g_pend.on)
+   for(int m = 0; m < MODELS; m++)
+      if(g_pend[s][m].on)
+         return true;
+   return false;
+}
+
+// Fill, cancel or expire one waiting retest.
+void PendingOne(int s, int m)
+{
+   if(!g_pend[s][m].on)
       return;
-   int s = g_pend.s, m = g_pend.m;
-   if(g_md[s][m].done || HasOpenPosition(g_slot[s].magic))
+   if(g_md[s][m].done || HasOpenPosition(MagicOf(s, m)))
    {
-      g_pend.on = false;
+      g_pend[s][m].on = false;
       return;
    }
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   if(TimeCurrent() > g_pend.expires)
+   if(TimeCurrent() > g_pend[s][m].expires)
    {
-      g_pend.on = false;
+      g_pend[s][m].on = false;
       g_rtExpired++;
       g_md[s][m].status = "retest expired";
       return;
    }
-   if((g_pend.dir == 2 && ask > g_pend.extreme) || (g_pend.dir == 1 && bid < g_pend.extreme))
+   if((g_pend[s][m].dir == 2 && ask > g_pend[s][m].extreme) || (g_pend[s][m].dir == 1 && bid < g_pend[s][m].extreme))
    {
-      g_pend.on = false;
+      g_pend[s][m].on = false;
       g_rtInvalid++;
       g_md[s][m].status = "retest cancelled: new sweep extreme";
       return;
    }
-   bool touched = g_pend.dir == 2 ? bid >= g_pend.level : ask <= g_pend.level;
+   bool touched = g_pend[s][m].dir == 2 ? bid >= g_pend[s][m].level : ask <= g_pend[s][m].level;
    if(!touched)
       return;
-   g_pend.on = false;
-   if(TryEnter(s, m, g_pend.dir, g_pend.sigNY, g_pend.extreme))
+   g_pend[s][m].on = false;
+   if(TryEnter(s, m, g_pend[s][m].dir, g_pend[s][m].sigNY, g_pend[s][m].extreme))
    {
       g_rtFilled++;
-      g_md[s][m].done   = true;
+      g_md[s][m].done   = !g_slot[s].reentry;
       g_md[s][m].status = "traded (retest)";
    }
+}
+
+// Every tick: all waiting retests.
+void PendingCheck()
+{
+   for(int s = 0; s < SLOTS; s++)
+      for(int m = 0; m < MODELS; m++)
+         PendingOne(s, m);
 }
 
 // One closed entry-TF bar through the model.
@@ -888,23 +923,24 @@ void ModelStep(int s, int m, const MqlRates &b, bool latest)
       bool entered = false;
       if(!latest)
          Skip(REJ_STALE, g_slot[s].name + g_mName[m] + ": stale signal");
-      else if(InpEntryType == ENTRY_RETEST)
+      else if(g_slot[s].retest)
       {
          // Wait for price to come back to the broken order-block level.
-         if(!g_pend.on && !HasOpenPosition(g_slot[s].magic))
+         bool busy = g_pend[s][m].on || HasOpenPosition(MagicOf(s, m)) || (!g_slot[s].perCandle && AnyPending(s));
+         if(!busy)
          {
-            g_pend.on      = true;
-            g_pend.s       = s;
-            g_pend.m       = m;
-            g_pend.dir     = dir;
-            g_pend.level   = dir == 2 ? g_md[s][m].obSellLow : g_md[s][m].obBuyHigh;
-            g_pend.extreme = extreme;
-            g_pend.sigNY   = sigNY;
-            g_pend.expires = TimeCurrent() + InpRetestHours * 3600;
+            g_pend[s][m].on      = true;
+            g_pend[s][m].s       = s;
+            g_pend[s][m].m       = m;
+            g_pend[s][m].dir     = dir;
+            g_pend[s][m].level   = dir == 2 ? g_md[s][m].obSellLow : g_md[s][m].obBuyHigh;
+            g_pend[s][m].extreme = extreme;
+            g_pend[s][m].sigNY   = sigNY;
+            g_pend[s][m].expires = TimeCurrent() + InpRetestHours * 3600;
             g_rtPlaced++;
-            g_md[s][m].status = StringFormat("waiting for retest of %s", PriceText(g_pend.level));
+            g_md[s][m].status = StringFormat("waiting for retest of %s", PriceText(g_pend[s][m].level));
             Log(StringFormat("[%s] %s retest limit %s (SL side %s), valid %dh", g_mName[m], dir == 2 ? "SELL" : "BUY",
-                             PriceText(g_pend.level), PriceText(extreme), InpRetestHours));
+                             PriceText(g_pend[s][m].level), PriceText(extreme), InpRetestHours));
          }
       }
       else
@@ -918,7 +954,7 @@ void ModelStep(int s, int m, const MqlRates &b, bool latest)
 
       if(entered)
       {
-         g_md[s][m].done   = true;
+         g_md[s][m].done   = !g_slot[s].reentry;
          g_md[s][m].status = "traded";
          return;
       }
@@ -987,7 +1023,7 @@ void CloseAtExitTime()
       bool byHold = g_slot[s].maxHoldSec > 0 && now - opened >= g_slot[s].maxHoldSec;
       if(!byClock && !byHold && !friday)
          continue;
-      g_trade.SetExpertMagicNumber(g_slot[s].magic);
+      g_trade.SetExpertMagicNumber((ulong)PositionGetInteger(POSITION_MAGIC));
       if(g_trade.PositionClose(ticket))
          Log(g_slot[s].name + (friday ? "CLOSE: Friday close " : byHold ? "CLOSE: max hold time " : "CLOSE: exit time ") + NYText(nowNY));
    }
@@ -1036,7 +1072,7 @@ void PrintTradeSummary()
 {
    Print("CRT PRO24 FUNNEL: " + FunnelText());
    Print("CRT PRO24 REJECTED: " + RejectText());
-   if(InpEntryType == ENTRY_RETEST)
+   if(g_slot[0].retest)
       Print(StringFormat("CRT PRO24 RETEST: placed %d | filled %d | expired %d | cancelled (new extreme) %d",
                          g_rtPlaced, g_rtFilled, g_rtExpired, g_rtInvalid));
    if(g_stN == 0)
@@ -1349,13 +1385,15 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "CRT PRO24 v1.02  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
+   string s = "CRT PRO24 v1.03  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
    s += "\n" + FunnelText() + "\nRejected: " + RejectText();
-   if(g_pend.on)
-      s += StringFormat("\nWaiting retest: %s %s at %s (until %s)", g_mName[g_pend.m], g_pend.dir == 2 ? "SELL" : "BUY",
-                        PriceText(g_pend.level), TimeToString(g_pend.expires, TIME_DATE | TIME_MINUTES));
+   for(int k = 0; k < SLOTS; k++)
+      for(int m = 0; m < MODELS; m++)
+         if(g_pend[k][m].on)
+            s += StringFormat("\nWaiting retest: %s %s at %s (until %s)", g_mName[m], g_pend[k][m].dir == 2 ? "SELL" : "BUY",
+                              PriceText(g_pend[k][m].level), TimeToString(g_pend[k][m].expires, TIME_DATE | TIME_MINUTES));
 
    for(int k = 0; k < SLOTS; k++)
    {
@@ -1383,7 +1421,7 @@ void UpdatePanel()
 
 bool ValidHHMM(int v) { return v >= 0 && v <= 2359 && v % 100 < 60; }
 
-string SlotTitle(int s) { return "PRO24"; }
+string SlotTitle(int s) { return s == 0 ? "PRO24" : "Selective"; }
 
 void SetModel(int s, int m, bool on, int from, int to)
 {
@@ -1398,8 +1436,24 @@ void SetPro24(int s)
    g_slot[s].on = true;  g_slot[s].name = "";  g_slot[s].magic = InpMagic;
    g_slot[s].tf = InpEntryTF;  g_slot[s].ohlc = false;  g_slot[s].newsPause = false;
    g_slot[s].exitHHMM = 0;  g_slot[s].maxHoldSec = InpMaxHoldHours * 3600;  g_slot[s].maxDay = InpMaxTradesDay;
+   g_slot[s].retest = InpEntryType == ENTRY_RETEST;  g_slot[s].perCandle = InpPerCandle;  g_slot[s].reentry = InpReentry;
    for(int m = 0; m < MODELS; m++)
       SetModel(s, m, true, -1, -1);
+}
+
+// The PDF model of CRT_1AM_EA (Selective): 1AM 2-4, 5AM 5-7, 9AM 9:30-11 NY,
+// M30 order-block break, OHLC rule, market entry, out at 12:00 NY, 1 a day.
+void SetSelective(int s)
+{
+   g_slot[s].on = true;  g_slot[s].name = "S ";  g_slot[s].magic = InpMagic + 10;
+   g_slot[s].tf = PERIOD_M30;  g_slot[s].ohlc = true;  g_slot[s].newsPause = false;
+   g_slot[s].exitHHMM = 1200;  g_slot[s].maxHoldSec = 0;  g_slot[s].maxDay = 1;
+   g_slot[s].retest = false;  g_slot[s].perCandle = false;  g_slot[s].reentry = false;
+   for(int m = 0; m < MODELS; m++)
+      SetModel(s, m, false, -1, -1);
+   SetModel(s, 0, true, 200, 400);
+   SetModel(s, 1, true, 500, 700);
+   SetModel(s, 2, true, 930, 1100);
 }
 
 int OnInit()
@@ -1420,7 +1474,10 @@ int OnInit()
       Print("Trend days must be 2-250");
       return INIT_PARAMETERS_INCORRECT;
    }
+   g_slot[1].on = false;
    SetPro24(0);
+   if(InpAddSelective)
+      SetSelective(1);
    for(int k = 0; k < SLOTS; k++)
    {
       g_slot[k].tfSec   = PeriodSeconds(g_slot[k].tf);
@@ -1432,7 +1489,9 @@ int OnInit()
    }
    ArrayInitialize(g_rej, 0);
    g_fCandles = g_fNoData = g_fNoBias = g_fHighSweeps = g_fLowSweeps = g_fBreaks = g_fTrades = 0;
-   g_pend.on  = false;
+   for(int k = 0; k < SLOTS; k++)
+      for(int m = 0; m < MODELS; m++)
+         g_pend[k][m].on = false;
    g_rtPlaced = g_rtFilled = g_rtExpired = g_rtInvalid = 0;
 
    g_silent  = (bool)MQLInfoInteger(MQL_OPTIMIZATION);
@@ -1458,11 +1517,11 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += g_mName[m] + " ";
-      Log(StringFormat("CRT PRO24 v1.02 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("CRT PRO24 v1.03 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
-   Log(StringFormat("CRT PRO24 v1.02 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+   Log(StringFormat("CRT PRO24 v1.03 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 
