@@ -191,7 +191,7 @@ hyrja te thyerja e OB në M15, brenda strukturës kohore H4, në drejtimin e tre
 
 # CRT PRO24 (MT5): versioni 24 orë, pa orare fikse
 
-Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.04). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
+Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.05). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
 
 - Ndjek **të 6 qirinjtë H4** të ditës (1AM, 5AM, 9AM, 1PM, 5PM, 9PM New York).
 - Hyn **kur vjen setup-i**, në çfarëdo ore: sweep i range-it, pastaj një qiri M15 mbyllet përtej qiririt
@@ -225,6 +225,34 @@ U mbajt varianti më i thjeshtë dhe më i qëndrueshëm.
 PRO24 është pozitiv çdo vit (2023 +44R, 2024 +15R, 2025 +42R, 2026 +11R). Ka më shumë trade,
 por më pak fitim për trade dhe rreth dyfish më shumë drawdown se versioni me orare.
 Për të njëjtin drawdown si Combined, përdor rreth **0.3%** rrezik.
+
+### v1.05: kontrolli i humbjeve
+
+Testet në MT5 (2023.01.01–2026.09.26, 0.5% rrezik):
+
+| | Trade | PF | Fitimi | DD | Humbje radhazi |
+|---|---|---|---|---|---|
+| v1.03 me Selective | 1184 | 1.27 | +141% | 9.2% | 13 |
+| v1.04 pa orare | 1141 | 1.24 | +114% | 10.2% | 13 |
+
+Rregullat e testuara për të ndalur humbjet, me kontroll në tri periudha dhe me çmime M5/M1:
+
+| Rregulli | Rezultati |
+|---|---|
+| Trailing stop nga +1R, break-even në +1R | dukej mirë në M15, **por me çmime M5/M1 e përkeqëson** (efekt i qirinjve të trashë) |
+| Ndalim pas 2 humbjeve në ditë, pauzë 24h pas 3–4 humbjeve radhazi, gjysmë rreziku pas humbjeve | ulin fitimin më shumë se humbjet |
+| Maksimumi 1–2 trade të hapura | pa efekt: seritë e humbjeve vijnë njëra pas tjetrës, jo njëkohësisht |
+| **Kufi ditor −1.5%** (`InpDailyLossPct`) | **fitimi i njëjtë, dita më e keq −1.5% në vend të −2.5%**: u fut si mbrojtje |
+
+Humbjet janë të rastësishme dhe të pavarura; nuk ka një gabim të fshehur që hiqet me një rregull.
+Mjeti që i zvogëlon drejtpërdrejt është **rreziku për trade** (`InpRiskPercent`):
+
+| Rreziku | Fitimi 2023–26 | Max DD | 12 humbje radhazi | Dita më e keq |
+|---|---|---|---|---|
+| 0.25% | +53% | 4.3% | −3.0% | −1.2% |
+| 0.30% | +66% | 5.2% | −3.6% | −1.5% |
+| 0.40% | +96% | 6.9% | −4.8% | −2.0% |
+| 0.50% | +131% | 8.6% | −6.0% | −2.5% |
 
 ### v1.04: pa tregtim me orar
 

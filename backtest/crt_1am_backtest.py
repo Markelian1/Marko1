@@ -359,6 +359,13 @@ def run(bars, cfg):
             if (pos["dir"] == 1 and h >= trig) or (pos["dir"] == 2 and l + spread <= trig):
                 pos["part"] = cfg["pc_frac"] * cfg["pc_r"]
                 pos["sl"] = pos["entry"]
+        # ---- trailing stop after +trail_start R, trail_dist R behind -------
+        if pos is not None and cfg.get("trail_start", 0) > 0:
+            dist = cfg["trail_dist"] * pos["risk"]
+            if pos["dir"] == 1 and h - pos["entry"] >= cfg["trail_start"] * pos["risk"]:
+                pos["sl"] = max(pos["sl"], h - dist)
+            elif pos["dir"] == 2 and pos["entry"] - (l + spread) >= cfg["trail_start"] * pos["risk"]:
+                pos["sl"] = min(pos["sl"], l + spread + dist)
         # ---- break-even after +be_r (from the next bar on) ---------------
         if pos is not None and cfg.get("be_r", 0) > 0:
             trig = pos["entry"] + cfg["be_r"] * pos["risk"] if pos["dir"] == 1 else pos["entry"] - cfg["be_r"] * pos["risk"]

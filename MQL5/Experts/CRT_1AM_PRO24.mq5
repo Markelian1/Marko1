@@ -22,6 +22,11 @@
 //   - v1.04: no trading by the clock; Selective (fixed key times) is off
 //     by default. The only clock rule left is the Friday close
 //     (InpFridayClose, 0 = off), which protects against weekend gaps
+//   - v1.05: daily loss limit (InpDailyLossPct, 1.5%): after losing that
+//     much of the day's starting balance in closed trades, no new trades
+//     until the next New York day. 2023-2026: same profit, worst day
+//     -1.5% instead of -2.5%. Trailing stops, break-even, streak pauses
+//     and position caps were tested on M1/M5 prices and did not help.
 //   - daily trend bias (previous close vs its 50-day average) and
 //     premium / discount of the range
 //   - SL beyond the sweep, TP 1:2, trade closed after 8 hours if still open
@@ -38,7 +43,7 @@
 //   v1.01 (one position, market): 1226 trades, PF 1.17, +71%, max DD 11.1%
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.04"
+#property version   "1.05"
 #property description "CRT PRO24: the CRT_1AM_EA setup in every H4 candle, 24 hours, no fixed hours."
 
 #include <Trade/Trade.mqh>
@@ -82,9 +87,10 @@ enum ENUM_REJECT
    REJ_ORDER,
    REJ_STALE,
    REJ_FRIDAY,
-   REJ_NEWS
+   REJ_NEWS,
+   REJ_DAYLOSS
 };
-#define REJECTS 16   // number of ENUM_REJECT values
+#define REJECTS 17   // number of ENUM_REJECT values
 
 enum ENUM_CRT_ENTRY
 {
@@ -129,6 +135,7 @@ input double InpSLBuffer     = 0.30;   // SL buffer beyond the sweep (price unit
 input int    InpMaxHoldHours = 8;      // Close a trade after this many hours (0 = off)
 input int    InpMaxTradesDay = 5;      // Max trades per day (one position at a time)
 input int    InpFridayClose  = 1600;   // Friday: close trades at (HHMM NY), no new trades 4h before (0 = off)
+input double InpDailyLossPct = 1.5;    // Daily loss limit: no new trades after losing this % in a NY day (0 = off)
 input ulong  InpMagic        = 770100; // Magic number (different from CRT_1AM_EA)
 
 input group "4. COST FILTERS"
@@ -244,7 +251,8 @@ int       g_fHighSweeps = 0, g_fLowSweeps = 0, g_fBreaks = 0, g_fTrades = 0;
 int       g_rej[REJECTS];
 string    g_rejName[REJECTS] = {"signals only", "key time", "against bias", "position open", "max trades",
                                 "spread", "OHLC", "premium/discount", "SL side", "SL too small", "RR",
-                                "lot size", "order failed", "stale", "Friday", "news hours"};
+                                "lot size", "order failed", "stale", "Friday", "news hours",
+                                "daily loss limit"};
 long      g_objSeq    = 0;
 
 int       g_stN = 0, g_stWin = 0, g_stSL = 0, g_stTP = 0, g_stOther = 0;
@@ -396,6 +404,41 @@ int TradesToday(ulong magic)
       cnt++;
    }
    return cnt;
+}
+
+// Today's (New York day) realised result of this EA's trades, in money.
+double TodayResult()
+{
+   datetime now      = TimeCurrent();
+   datetime dayStart = ToServer(DayStart(ToNY(now)));
+   if(!HistorySelect(dayStart, now + 60))
+      return 0.0;
+
+   double sum   = 0.0;
+   int    total = HistoryDealsTotal();
+   for(int i = 0; i < total; i++)
+   {
+      ulong t = HistoryDealGetTicket(i);
+      if(t == 0)
+         continue;
+      if(HistoryDealGetString(t, DEAL_SYMBOL) != _Symbol)
+         continue;
+      if(SlotOf((ulong)HistoryDealGetInteger(t, DEAL_MAGIC)) < 0)
+         continue;
+      sum += HistoryDealGetDouble(t, DEAL_PROFIT) + HistoryDealGetDouble(t, DEAL_COMMISSION) +
+             HistoryDealGetDouble(t, DEAL_SWAP);
+   }
+   return sum;
+}
+
+// True once today's closed trades lost InpDailyLossPct of the day's starting balance.
+bool DayLossHit()
+{
+   if(InpDailyLossPct <= 0.0)
+      return false;
+   double today    = TodayResult();
+   double startBal = AccountInfoDouble(ACCOUNT_BALANCE) - today;
+   return startBal > 0.0 && today <= -InpDailyLossPct / 100.0 * startBal;
 }
 
 void Skip(int why, string reason)
@@ -735,6 +778,11 @@ bool TryEnter(int s, int m, int dir, datetime sigNY, double extreme)
    if(InpFridayClose > 0 && FridayAfter(ToNY(TimeCurrent()), MathMax(0, InpFridayClose - 400)))
    {
       Skip(REJ_FRIDAY, tag + ": too close to the Friday close");
+      return false;
+   }
+   if(DayLossHit())
+   {
+      Skip(REJ_DAYLOSS, tag + ": daily loss limit reached");
       return false;
    }
    if(g_slot[s].maxDay > 0 && TradesToday(MagicOf(s, m)) >= g_slot[s].maxDay)
@@ -1389,7 +1437,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "CRT PRO24 v1.04  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
+   string s = "CRT PRO24 v1.05  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
    s += "\n" + FunnelText() + "\nRejected: " + RejectText();
@@ -1463,7 +1511,8 @@ void SetSelective(int s)
 int OnInit()
 {
    if(InpNYOffset < -12 || InpNYOffset > 14 || InpRiskPercent <= 0.0 || InpRiskPercent > 10.0 ||
-      !ValidHHMM(InpFridayClose) || InpMaxHoldHours < 0 || InpMaxTradesDay < 0 || InpRetestHours < 1)
+      !ValidHHMM(InpFridayClose) || InpMaxHoldHours < 0 || InpMaxTradesDay < 0 || InpRetestHours < 1 ||
+      InpDailyLossPct < 0.0)
    {
       Print("Invalid inputs");
       return INIT_PARAMETERS_INCORRECT;
@@ -1521,11 +1570,11 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += g_mName[m] + " ";
-      Log(StringFormat("CRT PRO24 v1.04 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("CRT PRO24 v1.05 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
-   Log(StringFormat("CRT PRO24 v1.04 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+   Log(StringFormat("CRT PRO24 v1.05 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 
