@@ -222,7 +222,7 @@ me shumë pak trade (~20 në vit) për ta konsideruar të provuar. Avantazhi i q
 
 # CRT PRO24 (MT5): versioni 24 orë, pa orare fikse
 
-Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.05). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
+Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.06). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
 
 - Ndjek **të 6 qirinjtë H4** të ditës (1AM, 5AM, 9AM, 1PM, 5PM, 9PM New York).
 - Hyn **kur vjen setup-i**, në çfarëdo ore: sweep i range-it, pastaj një qiri M15 mbyllet përtej qiririt
@@ -256,6 +256,22 @@ U mbajt varianti më i thjeshtë dhe më i qëndrueshëm.
 PRO24 është pozitiv çdo vit (2023 +44R, 2024 +15R, 2025 +42R, 2026 +11R). Ka më shumë trade,
 por më pak fitim për trade dhe rreth dyfish më shumë drawdown se versioni me orare.
 Për të njëjtin drawdown si Combined, përdor rreth **0.3%** rrezik.
+
+### v1.06: pa retest kundër trendit
+
+Në testin MT5 të v1.05 (1134 trade, PF 1.24, +114%, DD 9.5%), Journal-i tregoi se nga 3451 retest-e
+të vendosura, **1475 u refuzuan në mbushje sepse ishin kundër trendit**. EA e vendoste limitin pa e
+kontrolluar trendin. Limiti rrinte deri në 4 orë dhe e zinte qiririn, kështu që një setup i mirë
+në të njëjtin qiri nuk mund të vendosej. Në v1.06 trendi kontrollohet **para** se të vendoset retest-i.
+
+| Simulim (spread +0.05) | 2022.07–24.06 | 2024.07–26.09 | 2020–22 (M30) | 2025–26 me çmime M5 |
+|---|---|---|---|---|
+| v1.05 | 521 tr, PF 1.29, +85R | 641 tr, PF 1.23, +87R | 440 tr, PF 1.17, +41R | 360 tr, PF 1.26, +55R |
+| **v1.06** | 553 tr, PF 1.28, +88R | 681 tr, PF 1.25, +98R | 448 tr, PF 1.19, +46R | 378 tr, PF 1.25, +56R |
+
+2023.01–2026.09, 0.5% rrezik (pa kufirin ditor): v1.05 1081 trade, PF 1.28, +131%, DD 8.6%;
+**v1.06 1147 trade, PF 1.29, +144%, DD 8.3%**. Përmirësimi është i vogël, por del në çdo periudhë.
+Në Journal, "against bias" tani numërohet kur vjen setup-i, jo në mbushje.
 
 ### v1.05: kontrolli i humbjeve
 

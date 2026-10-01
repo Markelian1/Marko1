@@ -57,10 +57,11 @@ PRO24 = dict(ANYTIME, entry="retest", retest_sec=4 * 3600)
 
 
 def pro24_set(per_candle=True, reentry=True, selective=False):
-    """CRT_1AM_PRO24 v1.04 as a list of independent runs: one position per
-    H4 candle (each candle its own run), re-entry, optionally the Selective
-    model (off by default: it trades fixed key times)."""
-    base = dict(PRO24, reentry=reentry)
+    """CRT_1AM_PRO24 v1.06 as a list of independent runs: one position per
+    H4 candle (each candle its own run), re-entry, no retest against the
+    trend, optionally the Selective model (off by default: it trades fixed
+    key times). The v1.05 daily loss limit is not simulated."""
+    base = dict(PRO24, reentry=reentry, bias_first=True)
     cfgs = [dict(base, models={n: None}) for n in MODELS] if per_candle else [base]
     if selective:
         cfgs.append(dict(SELECTIVE, skip_hours=()))
@@ -261,11 +262,13 @@ def run(bars, cfg):
                     extreme = max(d.sweep_hi, bh) if direction == 2 else min(d.sweep_lo, bl)
                     if cfg.get("entry") == "retest" and not spike:
                         # limit at the broken order-block level, valid for retest_sec
-                        if pending is None and pos is None:
+                        res = "pending"
+                        if cfg.get("bias_first") and not d.allow & direction:
+                            res = "bias"                          # never wait for a retest against the bias
+                        elif pending is None and pos is None:
                             level = d.ob_sell_low if direction == 2 else d.ob_buy_high
                             pending = dict(name=name, d=d, dir=direction, level=level, extreme=extreme,
                                            sig_ny=ny + M15, expires=t + cfg.get("retest_sec", 7200))
-                        res = "pending"
                     else:
                         res = "spike" if spike else try_enter(name, d, direction, ny + M15, bar, extreme)
                     if direction == 2:

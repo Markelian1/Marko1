@@ -27,6 +27,10 @@
 //     until the next New York day. 2023-2026: same profit, worst day
 //     -1.5% instead of -2.5%. Trailing stops, break-even, streak pauses
 //     and position caps were tested on M1/M5 prices and did not help.
+//   - v1.06: a setup against the trend no longer waits for a retest. In
+//     v1.05 its limit sat for up to 4 hours, was refused at the fill and
+//     blocked new setups in the same candle meanwhile (1475 of 3451
+//     retests in the 2023-2026 test). Better in every period tested.
 //   - daily trend bias (previous close vs its 50-day average) and
 //     premium / discount of the range
 //   - SL beyond the sweep, TP 1:2, trade closed after 8 hours if still open
@@ -36,6 +40,8 @@
 //     against (in R) and a short description of the win or loss
 //
 // Tested on FP Trading XAUUSD 2023.01-2026.09 (simulation, 0.5% risk):
+//   v1.06 defaults: ~1150 trades, PF 1.29, +144%, max DD 8.3%
+//   v1.05 in MT5: 1134 trades, PF 1.24, +114%, max DD 9.5%
 //   v1.04 defaults (per candle + re-entry, no Selective): ~1080 trades,
 //   PF 1.28, +131%, max DD 8.6%, up to 2 positions open at once
 //   with Selective: ~1120 trades, PF 1.32, +161%, max DD 8.6%
@@ -43,7 +49,7 @@
 //   v1.01 (one position, market): 1226 trades, PF 1.17, +71%, max DD 11.1%
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.05"
+#property version   "1.06"
 #property description "CRT PRO24: the CRT_1AM_EA setup in every H4 candle, 24 hours, no fixed hours."
 
 #include <Trade/Trade.mqh>
@@ -978,8 +984,12 @@ void ModelStep(int s, int m, const MqlRates &b, bool latest)
       else if(g_slot[s].retest)
       {
          // Wait for price to come back to the broken order-block level.
+         // v1.06: a setup against the trend is dropped here; its limit
+         // would be refused at the fill anyway and blocked the candle.
          bool busy = g_pend[s][m].on || HasOpenPosition(MagicOf(s, m)) || (!g_slot[s].perCandle && AnyPending(s));
-         if(!busy)
+         if((g_md[s][m].allowDir & dir) == 0)
+            Skip(REJ_BIAS, g_slot[s].name + g_mName[m] + (dir == 1 ? " BUY" : " SELL") + ": against HTF bias");
+         else if(!busy)
          {
             g_pend[s][m].on      = true;
             g_pend[s][m].s       = s;
@@ -1437,7 +1447,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "CRT PRO24 v1.05  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
+   string s = "CRT PRO24 v1.06  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
    s += "\n" + FunnelText() + "\nRejected: " + RejectText();
@@ -1570,11 +1580,11 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += g_mName[m] + " ";
-      Log(StringFormat("CRT PRO24 v1.05 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("CRT PRO24 v1.06 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
-   Log(StringFormat("CRT PRO24 v1.05 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
+   Log(StringFormat("CRT PRO24 v1.06 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpFridayClose));
 

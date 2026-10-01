@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Trade journal with a description of every trade, losses first.
 
-Runs CRT_1AM_PRO24 v1.03 (or a CRT_1AM_EA mode) through crt_1am_backtest.py on an
+Runs CRT_1AM_PRO24 v1.06 (or a CRT_1AM_EA mode) through crt_1am_backtest.py on an
 MT5 bar export and writes one CSV row per trade: when, which H4 candle,
 direction, prices, how far it went for and against the trade (MFE / MAE in
 R), the market context (trend, range, sweep, spread) and a short
