@@ -243,7 +243,7 @@ Skedari: `Experts/GOLD_MULTI_PRO.mq5` (v1.01), magic bazë **880100**.
 **Pse blen kur range-i shkon poshtë?** Kjo është vetë logjika e CRT-së:
 1. Range-i shitet dhe low-i i tij fshihet: merren stop-et e blerësve.
 2. Kur një qiri mbyllet përsëri mbi order block-un, likuiditeti i marrë përdoret për të shkuar lart.
-3. Robotti blen vetëm kur trendi ditor është lart.
+3. Roboti blen vetëm kur trendi ditor është lart.
 
 U testua nëse ndihmon kërkesa që edhe drejtimi lokal të jetë lart:
 
