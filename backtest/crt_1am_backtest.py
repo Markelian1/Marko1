@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline backtest of CRT_1AM_EA (MQL5/Experts/CRT_1AM_EA.mq5, v1.04).
+"""Offline backtest of CRT_1AM_EA (MQL5/Experts/CRT_1AM_EA.mq5, v1.05).
 
 Replays M1 bars (server time) and runs the same rules as the EA:
 
@@ -49,6 +49,9 @@ SELECTIVE = DEFAULT
 # trades held up to 8 hours, up to 5 trades a day.
 ACTIVE = dict(DEFAULT, tf=900, ohlc=False, exit_hhmm=0, max_hold=8 * 3600, max_day=5,
               models={"1AM": (100, 500), "5AM": (500, 900), "9AM": (900, 1300), "1PM": (1300, 1700)})
+# EA "Any time" mode: Active rules on all six H4 candles, no news pause
+# (None = no key time, the whole candle).
+ANYTIME = dict(ACTIVE, skip_hours=(), models={n: None for n in MODELS})
 
 
 def hhmm_min(v):
@@ -97,8 +100,10 @@ def run(bars, cfg):
         hour, n_rng = MODELS[name]
         d = ModelDay(crt_ny)
         crt_srv = crt_ny + off
+        n_rng = cfg.get("range_candles", {}).get(name, n_rng)
         rng = [m15[k] for k in range(crt_srv - n_rng * 4 * 3600, crt_srv, M15) if k in m15]
-        first = next((m15[k] for k in range(crt_srv, crt_srv + 3600, M15) if k in m15), None)
+        # first bar of the candle (the 5PM candle starts after the daily break)
+        first = next((m15[k] for k in range(crt_srv, crt_srv + 4 * 3600, M15) if k in m15), None)
         day = crt_srv - crt_srv % DAY
         i = d1_index.get(day, 0)
         if len(rng) < 4 or first is None or i == 0:
@@ -134,9 +139,9 @@ def run(bars, cfg):
 
     def try_enter(name, d, direction, sig_ny, bar, extreme):
         t, o, h, l, c, spread = bar
-        frm, to = cfg["models"][name]
+        key = cfg["models"][name]
         m = (sig_ny % DAY) // 60
-        if not hhmm_min(frm) <= m < hhmm_min(to):
+        if key is not None and not hhmm_min(key[0]) <= m < hhmm_min(key[1]):
             return "key time"
         if not d.allow & direction:
             return "bias"

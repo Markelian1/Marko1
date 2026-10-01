@@ -30,7 +30,7 @@
 // block / FVG key levels (approximated by the premium/discount filter).
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.04"
+#property version   "1.05"
 #property description "Time-based CRT: the 1AM (5AM / 9AM) New York H4 candle sweeps the"
 #property description "prior range at key time; M30 / M15 order block entry. Built for XAUUSD."
 
@@ -55,7 +55,8 @@ enum ENUM_CRT_MODE
    MODE_COMBINED  = 0, // Combined: Active + Selective together (up to 2 positions)
    MODE_ACTIVE    = 1, // Active: about 4 trades a week (M15, 1AM-5PM candles)
    MODE_SELECTIVE = 2, // Selective: about 1 trade a month (M30, key times only)
-   MODE_CUSTOM    = 3  // Custom: use the settings in groups 1b and 3b
+   MODE_CUSTOM    = 3, // Custom: use the settings in groups 1b and 3b
+   MODE_ANYTIME   = 4  // Any time: Active rules on all 6 H4 candles, 24h, no news pause
 };
 
 enum ENUM_CRT_PD
@@ -160,7 +161,7 @@ input int  InpOptMinTrades = 30; // Min trades for the "Custom max" score
 // STRUCTS / GLOBALS
 // ============================================================================
 
-#define MODELS  4
+#define MODELS  6
 #define OBJ_PFX "CRT1AM_"
 
 struct ModelDay
@@ -216,6 +217,7 @@ struct Slot
    int             exitHHMM;
    int             maxHoldSec;
    int             maxDay;
+   bool            newsPause;    // no new trades in InpNoTradeFrom-InpNoTradeTo
    datetime        lastBar;      // open time of the entry-TF bar being formed
    bool            mOn[MODELS];
    int             mFrom[MODELS];
@@ -230,9 +232,9 @@ ModelDay  g_md[SLOTS][MODELS];
 D1Engine  g_d1;
 TradeRisk g_risk[];
 
-int       g_mHour[MODELS]   = {1, 5, 9, 13};   // CRT candle start (NY hour)
-int       g_mRange[MODELS]  = {2, 1, 1, 1};    // H4 candles in the time-based range
-string    g_mName[MODELS]   = {"1AM", "5AM", "9AM", "1PM"};
+int       g_mHour[MODELS]   = {1, 5, 9, 13, 17, 21};   // CRT candle start (NY hour)
+int       g_mRange[MODELS]  = {2, 1, 1, 1, 1, 1};      // H4 candles in the time-based range
+string    g_mName[MODELS]   = {"1AM", "5AM", "9AM", "1PM", "5PM", "9PM"};
 
 bool      g_ready     = false;
 bool      g_silent    = false;
@@ -589,7 +591,7 @@ void InitModelDay(int s, int m, datetime crtNY)
    }
 
    MqlRates oc[];
-   if(CopyRates(_Symbol, g_slot[s].tf, crtSrv, crtSrv + 3600, oc) <= 0)
+   if(CopyRates(_Symbol, g_slot[s].tf, crtSrv, crtSrv + 4 * 3600 - 1, oc) <= 0)   // 5PM opens after the daily break
    {
       g_md[s][m].status = "no open";
       g_fNoData++;
@@ -660,6 +662,8 @@ bool FridayAfter(datetime ny, int hhmm)
 
 bool InKeyTime(int s, int m, datetime ny)
 {
+   if(g_slot[s].mFrom[m] < 0)
+      return true;          // any time inside the candle
    int t = MinuteOfDay(ny);
    return t >= HHMMToMin(g_slot[s].mFrom[m]) && t < HHMMToMin(g_slot[s].mTo[m]);
 }
@@ -698,7 +702,7 @@ bool TryEnter(int s, int m, int dir, datetime sigNY, double extreme)
       Skip(REJ_POSITION, tag + ": position already open");
       return false;
    }
-   if(InNewsHours(ToNY(TimeCurrent())))
+   if(g_slot[s].newsPause && InNewsHours(ToNY(TimeCurrent())))
    {
       Skip(REJ_NEWS, tag + ": news hours");
       return false;
@@ -803,10 +807,13 @@ bool TryEnter(int s, int m, int dir, datetime sigNY, double extreme)
 // One closed entry-TF bar through the model.
 void ModelStep(int s, int m, const MqlRates &b, bool latest)
 {
-   datetime ny    = ToNY(b.time);
-   datetime crtNY = DayStart(ny) + g_mHour[m] * 3600;
-   if(ny < crtNY || ny >= crtNY + 4 * 3600)
+   datetime ny   = ToNY(b.time);
+   long     into = ((long)ny - g_mHour[m] * 3600) % 86400;   // time since the candle start
+   if(into < 0)
+      into += 86400;
+   if(into >= 4 * 3600)
       return;   // only inside the CRT candle
+   datetime crtNY = (datetime)((long)ny - into);
 
    if(g_md[s][m].key != crtNY)
       InitModelDay(s, m, crtNY);
@@ -1077,7 +1084,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "CRT 1AM EA v1.04  |  " + EnumToString(InpMode) + "  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
+   string s = "CRT 1AM EA v1.05  |  " + EnumToString(InpMode) + "  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
    s += "\n" + FunnelText() + "\nRejected: " + RejectText();
@@ -1091,8 +1098,10 @@ void UpdatePanel()
       {
          if(!g_slot[k].mOn[m])
             continue;
-         s += StringFormat("\n[%s]  key time %02d:%02d-%02d:%02d  |  %s", g_mName[m],
-                           g_slot[k].mFrom[m] / 100, g_slot[k].mFrom[m] % 100, g_slot[k].mTo[m] / 100, g_slot[k].mTo[m] % 100,
+         string key = g_slot[k].mFrom[m] < 0 ? "whole candle" :
+                      StringFormat("%02d:%02d-%02d:%02d", g_slot[k].mFrom[m] / 100, g_slot[k].mFrom[m] % 100,
+                                   g_slot[k].mTo[m] / 100, g_slot[k].mTo[m] % 100);
+         s += StringFormat("\n[%s]  %s  |  %s", g_mName[m], key,
                            g_md[k][m].key > 0 ? NYText(g_md[k][m].key) + ": " + g_md[k][m].status : "waiting for the candle");
       }
    }
@@ -1125,35 +1134,49 @@ void SetModel(int s, int m, bool on, int from, int to)
 void SetActive(int s, ulong magic, string name)
 {
    g_slot[s].on = true;  g_slot[s].name = name;  g_slot[s].magic = magic;
-   g_slot[s].tf = PERIOD_M15;  g_slot[s].ohlc = false;
+   g_slot[s].tf = PERIOD_M15;  g_slot[s].ohlc = false;  g_slot[s].newsPause = true;
    g_slot[s].exitHHMM = 0;  g_slot[s].maxHoldSec = 8 * 3600;  g_slot[s].maxDay = 5;
+   for(int m = 0; m < MODELS; m++)
+      SetModel(s, m, false, -1, -1);
    SetModel(s, 0, true, 100, 500);
    SetModel(s, 1, true, 500, 900);
    SetModel(s, 2, true, 900, 1300);
    SetModel(s, 3, true, 1300, 1700);
 }
 
+// Active rules on every H4 candle of the day (also 5PM and 9PM), no news pause.
+void SetAnyTime(int s, ulong magic)
+{
+   SetActive(s, magic, "");
+   g_slot[s].newsPause = false;
+   for(int m = 0; m < MODELS; m++)
+      SetModel(s, m, true, -1, -1);
+}
+
 // The PDF key times, OHLC rule, out at 12:00 New York, 1 trade a day.
 void SetSelective(int s, ulong magic, string name)
 {
    g_slot[s].on = true;  g_slot[s].name = name;  g_slot[s].magic = magic;
-   g_slot[s].tf = PERIOD_M30;  g_slot[s].ohlc = true;
+   g_slot[s].tf = PERIOD_M30;  g_slot[s].ohlc = true;  g_slot[s].newsPause = true;
    g_slot[s].exitHHMM = 1200;  g_slot[s].maxHoldSec = 0;  g_slot[s].maxDay = 1;
+   for(int m = 0; m < MODELS; m++)
+      SetModel(s, m, false, -1, -1);
    SetModel(s, 0, true, 200, 400);
    SetModel(s, 1, true, 500, 700);
    SetModel(s, 2, true, 930, 1100);
-   SetModel(s, 3, false, 1300, 1700);
 }
 
 void SetCustom(int s, ulong magic)
 {
    g_slot[s].on = true;  g_slot[s].name = "";  g_slot[s].magic = magic;
-   g_slot[s].tf = InpEntryTF;  g_slot[s].ohlc = InpOHLC;
+   g_slot[s].tf = InpEntryTF;  g_slot[s].ohlc = InpOHLC;  g_slot[s].newsPause = true;
    g_slot[s].exitHHMM = InpExitHHMM;  g_slot[s].maxHoldSec = InpMaxHoldHours * 3600;  g_slot[s].maxDay = InpMaxTradesDay;
    SetModel(s, 0, InpModel1AM, InpKT1From, InpKT1To);
    SetModel(s, 1, InpModel5AM, InpKT5From, InpKT5To);
    SetModel(s, 2, InpModel9AM, InpKT9From, InpKT9To);
    SetModel(s, 3, InpModel1PM, InpKT13From, InpKT13To);
+   SetModel(s, 4, false, -1, -1);
+   SetModel(s, 5, false, -1, -1);
 }
 
 int OnInit()
@@ -1194,6 +1217,8 @@ int OnInit()
       SetActive(0, InpMagic, "");
    else if(InpMode == MODE_SELECTIVE)
       SetSelective(0, InpMagic, "");
+   else if(InpMode == MODE_ANYTIME)
+      SetAnyTime(0, InpMagic);
    else
       SetCustom(0, InpMagic);
    for(int k = 0; k < SLOTS; k++)
@@ -1231,11 +1256,11 @@ int OnInit()
       for(int m = 0; m < MODELS; m++)
          if(g_slot[k].mOn[m])
             models += g_mName[m] + " ";
-      Log(StringFormat("CRT 1AM EA v1.04 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
+      Log(StringFormat("CRT 1AM EA v1.05 | %s | magic %s | entry %s | models %s| OHLC %s | exit %04d NY | max hold %dh | max %d/day",
                        SlotTitle(k), IntegerToString((long)g_slot[k].magic), EnumToString(g_slot[k].tf), models,
                        g_slot[k].ohlc ? "on" : "off", g_slot[k].exitHHMM, g_slot[k].maxHoldSec / 3600, g_slot[k].maxDay));
    }
-   Log(StringFormat("CRT 1AM EA v1.04 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | no trades %04d-%04d NY | Friday close %04d NY",
+   Log(StringFormat("CRT 1AM EA v1.05 | NY offset %d | bias %s (%d days) | prem/disc %s | TP %s | no trades %04d-%04d NY | Friday close %04d NY",
                     InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc),
                     InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpNoTradeFrom, InpNoTradeTo, InpFridayClose));
 

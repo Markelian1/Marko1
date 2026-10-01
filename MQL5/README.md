@@ -154,7 +154,7 @@ Optimizimi 2 (vetëm "Require an active HTF CRT in the same direction"):
 
 # CRT 1AM EA (MT5): strategjia nga PDF-të "1AM CRT" dhe "Time & Price"
 
-Skedari: `Experts/CRT_1AM_EA.mq5` (v1.04). Është EA e re, e veçantë nga CRT_MTF_EA.
+Skedari: `Experts/CRT_1AM_EA.mq5` (v1.05). Është EA e re, e veçantë nga CRT_MTF_EA.
 Nuk hap trade në çdo CRT, por vetëm në qiririn H4 të orës **1:00 New York** dhe
 vetëm në orën kyçe.
 
@@ -186,6 +186,28 @@ EA-ja i llogarit të gjitha oraret në kohën e New York-ut:
 - Kontroll: në MT5 hape **Market Watch**; ora lart është ora e serverit. Kur në New York
   është 00:00, serveri duhet të tregojë 07:00. Nëse jo, ndryshoje `InpNYOffset`.
 - Te paneli i EA-së shfaqet "New York time"; duhet të përputhet me orën reale të NY.
+
+## v1.05: a duhen oraret? Mënyra "Any time" (24h)
+
+Testi i v1.04 Combined në MT5 (2023.01.01–2026.09.26): 788 trade, PF 1.37, +97%, DD 7.0%.
+Rezultati ndahet në Active +115.5R dhe Selective +24.7R. Simulimi priste 787 trade dhe PF 1.40.
+
+Pyetja ishte: a mund të hyjë EA-ja kur vjen setup-i, pa orare fikse? Mënyra e re
+`InpMode = Any time` merr setup-in në **të 6 qirinjtë H4 të ditës** (edhe 5PM dhe 9PM, pra 24 orë),
+pa key time dhe pa pauzën e lajmeve. Testi (2023.01.01–2026.09.26, 0.5% rrezik):
+
+| | Trade | PF | Total | Max DD | Fitimi |
+|---|---|---|---|---|---|
+| **Combined (me orare)** | 787 | **1.40** | +151R | **13.3R** | **+109%** |
+| Any time (24h) | 1226 | 1.17 | +112R | 23.4R | +71% |
+
+Edhe në 2020–2022 (M30, të pavarura) "çdo orë" del më keq: PF 1.08 kundrejt 1.20.
+Qirinjtë 5PM dhe 9PM nuk japin rezultat të qëndrueshëm: dalin pozitivë në një periudhë dhe negativë në tjetrën.
+Rregulli i vetëm kohor që ndihmon gjithmonë është pauza e lajmeve 8:00–10:00 NY.
+
+Oraret nuk janë hyrje me orë fikse. Brenda çdo qiriri H4, EA-ja hyn kur vjen setup-i
+(sweep + thyerje e OB), në çdo minutë. Oraret vetëm tregojnë cilat qirinj H4 ndiqen.
+Kjo është ideja e "Time & Price" te PDF-të.
 
 ## v1.04: mënyra Combined dhe pa hyrje në orën e lajmeve
 
