@@ -30,7 +30,7 @@
 // block / FVG key levels (approximated by the premium/discount filter).
 //+------------------------------------------------------------------+
 #property copyright "Marko"
-#property version   "1.02"
+#property version   "1.03"
 #property description "Time-based CRT: the 1AM (5AM / 9AM) New York H4 candle sweeps the"
 #property description "prior range at key time; M30 / M15 order block entry. Built for XAUUSD."
 
@@ -48,6 +48,13 @@ enum ENUM_CRT_BIAS
    BIAS_PREV_DAY   = 2, // Direction of the previous daily candle
    BIAS_D1_OR_PREV = 3, // Daily CRT, else the previous daily candle
    BIAS_TREND      = 4  // Daily trend: previous close vs its N-day average
+};
+
+enum ENUM_CRT_MODE
+{
+   MODE_ACTIVE    = 0, // Active: about 3-4 trades a week (M15, 1AM-5PM candles)
+   MODE_SELECTIVE = 1, // Selective: about 1 trade a month (M30, key times only)
+   MODE_CUSTOM    = 2  // Custom: use the settings in groups 1b and 3b
 };
 
 enum ENUM_CRT_PD
@@ -73,9 +80,10 @@ enum ENUM_REJECT
    REJ_RR,
    REJ_LOTS,
    REJ_ORDER,
-   REJ_STALE
+   REJ_STALE,
+   REJ_FRIDAY
 };
-#define REJECTS 14   // number of ENUM_REJECT values
+#define REJECTS 15   // number of ENUM_REJECT values
 
 enum ENUM_CRT_TP
 {
@@ -88,9 +96,12 @@ enum ENUM_CRT_TP
 // INPUTS
 // ============================================================================
 
-input group "1. MODEL (New York time)"
+input group "1. MODE (New York time)"
+input ENUM_CRT_MODE InpMode = MODE_ACTIVE; // Trading mode
 input bool InpTradeEnabled = true;  // Place trades (false = signals only)
 input int  InpNYOffset     = 7;     // Server time minus New York time (hours)
+
+input group "1b. CUSTOM MODE ONLY: candles and key times"
 input ENUM_TIMEFRAMES InpEntryTF = PERIOD_M30; // Entry / order-block timeframe (M5, M15, M30)
 input bool InpModel1AM     = true;  // 1AM candle (range = 5PM + 9PM candles)
 input int  InpKT1From      = 200;   // 1AM key time from (HHMM)
@@ -101,12 +112,15 @@ input int  InpKT5To        = 700;   // 5AM key time to (HHMM)
 input bool InpModel9AM     = true;  // 9AM candle (range = 5AM candle)
 input int  InpKT9From      = 930;   // 9AM key time from (HHMM)
 input int  InpKT9To        = 1100;  // 9AM key time to (HHMM)
+input bool InpModel1PM     = false; // 1PM candle (range = 9AM candle)
+input int  InpKT13From     = 1300;  // 1PM key time from (HHMM)
+input int  InpKT13To       = 1700;  // 1PM key time to (HHMM)
+input bool InpOHLC         = true;  // Sell only above / buy only below the CRT candle open
 
 input group "2. BIAS / PREMIUM-DISCOUNT"
 input ENUM_CRT_BIAS InpBias     = BIAS_TREND;      // Higher-timeframe bias
 input int           InpTrendDays = 50;             // Days in the trend average (bias = daily trend)
 input ENUM_CRT_PD   InpPremDisc = PD_RANGE;        // Premium/discount (sell above / buy below the middle)
-input bool          InpOHLC     = true;            // Sell only above / buy only below the CRT candle open
 
 input group "3. RISK / EXIT"
 input double InpRiskPercent  = 0.5;    // Risk per trade (% of balance)
@@ -115,9 +129,13 @@ input ENUM_CRT_TP InpTPMode   = TP_RR;  // Take profit
 input double InpRR           = 2.0;    // Reward:risk (TP = fixed RR)
 input double InpMinRR        = 1.5;    // Min reward:risk (TP = range side)
 input double InpSLBuffer     = 0.30;   // SL buffer beyond the sweep (price units, XAUUSD = $)
-input int    InpExitHHMM     = 1200;   // Close open trades at (HHMM New York, 0 = off)
-input int    InpMaxTradesDay = 1;      // Max trades per day
+input int    InpFridayClose  = 1600;   // Friday: close trades at (HHMM NY), no new trades 4h before (0 = off)
 input ulong  InpMagic        = 660100; // Magic number
+
+input group "3b. CUSTOM MODE ONLY: exits and trades per day"
+input int    InpExitHHMM     = 1200;   // Close open trades at (HHMM New York, 0 = off)
+input int    InpMaxHoldHours = 0;      // Close a trade after this many hours (0 = off)
+input int    InpMaxTradesDay = 1;      // Max trades per day
 
 input group "4. COST FILTERS"
 input double InpMinSL        = 1.00;   // Min SL distance (price units, 0 = off)
@@ -138,7 +156,7 @@ input int  InpOptMinTrades = 30; // Min trades for the "Custom max" score
 // STRUCTS / GLOBALS
 // ============================================================================
 
-#define MODELS  3
+#define MODELS  4
 #define OBJ_PFX "CRT1AM_"
 
 struct ModelDay
@@ -184,9 +202,9 @@ ModelDay  g_md[MODELS];
 D1Engine  g_d1;
 TradeRisk g_risk[];
 
-int       g_mHour[MODELS]   = {1, 5, 9};   // CRT candle start (NY hour)
-int       g_mRange[MODELS]  = {2, 1, 1};   // H4 candles in the time-based range
-string    g_mName[MODELS]   = {"1AM", "5AM", "9AM"};
+int       g_mHour[MODELS]   = {1, 5, 9, 13};   // CRT candle start (NY hour)
+int       g_mRange[MODELS]  = {2, 1, 1, 1};    // H4 candles in the time-based range
+string    g_mName[MODELS]   = {"1AM", "5AM", "9AM", "1PM"};
 bool      g_mOn[MODELS];
 int       g_mFrom[MODELS];
 int       g_mTo[MODELS];
@@ -194,6 +212,10 @@ int       g_mTo[MODELS];
 datetime  g_lastBar    = 0;          // open time of the entry-TF bar being formed
 ENUM_TIMEFRAMES g_tf   = PERIOD_M30;
 int       g_tfSec      = 1800;
+bool      g_ohlc       = true;
+int       g_exitHHMM   = 1200;
+int       g_maxHoldSec = 0;
+int       g_maxDay     = 1;
 bool      g_ready     = false;
 bool      g_silent    = false;
 bool      g_noChart   = false;
@@ -206,7 +228,7 @@ int       g_fHighSweeps = 0, g_fLowSweeps = 0, g_fBreaks = 0, g_fTrades = 0;
 int       g_rej[REJECTS];
 string    g_rejName[REJECTS] = {"signals only", "key time", "against bias", "position open", "max trades",
                                 "spread", "OHLC", "premium/discount", "SL side", "SL too small", "RR",
-                                "lot size", "order failed", "stale"};
+                                "lot size", "order failed", "stale", "Friday"};
 long      g_objSeq    = 0;
 
 int       g_stN = 0, g_stWin = 0, g_stSL = 0, g_stTP = 0, g_stOther = 0;
@@ -600,6 +622,14 @@ void InitModelDay(int m, datetime crtNY)
                        g_md[m].allowDir == 3 ? "BOTH" : "NONE"));
 }
 
+// Friday (New York) and at or after hhmm.
+bool FridayAfter(datetime ny, int hhmm)
+{
+   MqlDateTime d;
+   TimeToStruct(ny, d);
+   return d.day_of_week == 5 && MinuteOfDay(ny) >= HHMMToMin(hhmm);
+}
+
 bool InKeyTime(int m, datetime ny)
 {
    int t = MinuteOfDay(ny);
@@ -631,7 +661,12 @@ bool TryEnter(int m, int dir, datetime sigNY, double extreme)
       Skip(REJ_POSITION, tag + ": position already open");
       return false;
    }
-   if(InpMaxTradesDay > 0 && TradesToday() >= InpMaxTradesDay)
+   if(InpFridayClose > 0 && FridayAfter(ToNY(TimeCurrent()), MathMax(0, InpFridayClose - 400)))
+   {
+      Skip(REJ_FRIDAY, tag + ": too close to the Friday close");
+      return false;
+   }
+   if(g_maxDay > 0 && TradesToday() >= g_maxDay)
    {
       Skip(REJ_MAX_TRADES, tag + ": max trades today");
       return false;
@@ -648,7 +683,7 @@ bool TryEnter(int m, int dir, datetime sigNY, double extreme)
       return false;
    }
    // OHLC: sell above the CRT candle's open, buy below it.
-   if(InpOHLC && ((dir == 2 && bid < g_md[m].crtOpen) || (dir == 1 && ask > g_md[m].crtOpen)))
+   if(g_ohlc && ((dir == 2 && bid < g_md[m].crtOpen) || (dir == 1 && ask > g_md[m].crtOpen)))
    {
       Skip(REJ_OHLC, tag + ": wrong side of the CRT open");
       return false;
@@ -811,15 +846,22 @@ void ModelStep(int m, const MqlRates &b, bool latest)
    }
 }
 
-// Closes positions opened before the latest exit time (InpExitHHMM New York).
+// Closes positions opened before the latest daily exit time (New York) or
+// held longer than the max hold time.
 void CloseAtExitTime()
 {
-   if(InpExitHHMM <= 0)
+   if(g_exitHHMM <= 0 && g_maxHoldSec <= 0 && InpFridayClose <= 0)
       return;
-   datetime nowNY  = ToNY(TimeCurrent());
-   datetime exitNY = DayStart(nowNY) + HHMMToMin(InpExitHHMM) * 60;
-   if(nowNY < exitNY)
-      exitNY -= 86400;
+   datetime now    = TimeCurrent();
+   datetime nowNY  = ToNY(now);
+   bool     friday = InpFridayClose > 0 && FridayAfter(nowNY, InpFridayClose);
+   datetime exitNY = 0;
+   if(g_exitHHMM > 0)
+   {
+      exitNY = DayStart(nowNY) + HHMMToMin(g_exitHHMM) * 60;
+      if(nowNY < exitNY)
+         exitNY -= 86400;
+   }
 
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
@@ -830,10 +872,13 @@ void CloseAtExitTime()
          continue;
       if((ulong)PositionGetInteger(POSITION_MAGIC) != InpMagic)
          continue;
-      if(ToNY((datetime)PositionGetInteger(POSITION_TIME)) >= exitNY)
+      datetime opened = (datetime)PositionGetInteger(POSITION_TIME);
+      bool byClock = g_exitHHMM > 0 && ToNY(opened) < exitNY;
+      bool byHold  = g_maxHoldSec > 0 && now - opened >= g_maxHoldSec;
+      if(!byClock && !byHold && !friday)
          continue;
       if(g_trade.PositionClose(ticket))
-         Log("CLOSE: exit time " + NYText(nowNY));
+         Log((friday ? "CLOSE: Friday close " : byHold ? "CLOSE: max hold time " : "CLOSE: exit time ") + NYText(nowNY));
    }
 }
 
@@ -980,7 +1025,7 @@ void UpdatePanel()
       return;
 
    datetime nowNY = ToNY(TimeCurrent());
-   string s = "CRT 1AM EA v1.02  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
+   string s = "CRT 1AM EA v1.03  |  " + EnumToString(InpMode) + "  |  " + _Symbol + "  |  " + (InpTradeEnabled ? "TRADING ON" : "SIGNALS ONLY") +
               "  |  New York time " + NYText(nowNY) + "  (server - " + IntegerToString(InpNYOffset) + "h)";
    s += "\nDaily CRT bias: " + D1Text() + "  |  last skip: " + g_lastSkip;
    s += "\n" + FunnelText() + "\nRejected: " + RejectText();
@@ -1012,7 +1057,8 @@ int OnInit()
 {
    if(InpNYOffset < -12 || InpNYOffset > 14 || InpRiskPercent <= 0.0 || InpRiskPercent > 10.0 ||
       !ValidHHMM(InpKT1From) || !ValidHHMM(InpKT1To) || !ValidHHMM(InpKT5From) || !ValidHHMM(InpKT5To) ||
-      !ValidHHMM(InpKT9From) || !ValidHHMM(InpKT9To) || !ValidHHMM(InpExitHHMM))
+      !ValidHHMM(InpKT9From) || !ValidHHMM(InpKT9To) || !ValidHHMM(InpKT13From) || !ValidHHMM(InpKT13To) ||
+      !ValidHHMM(InpExitHHMM) || !ValidHHMM(InpFridayClose) || InpMaxHoldHours < 0)
    {
       Print("Invalid inputs");
       return INIT_PARAMETERS_INCORRECT;
@@ -1027,18 +1073,41 @@ int OnInit()
       Print("Trend days must be 2-250");
       return INIT_PARAMETERS_INCORRECT;
    }
-   if(!InpModel1AM && !InpModel5AM && !InpModel9AM)
+   if(InpMode == MODE_CUSTOM && !InpModel1AM && !InpModel5AM && !InpModel9AM && !InpModel1PM)
    {
       Print("Enable at least one model");
       return INIT_PARAMETERS_INCORRECT;
    }
 
-   g_tf    = InpEntryTF;
+   if(InpMode == MODE_ACTIVE)
+   {
+      // Every H4 candle from 1AM to 5PM, signal anywhere inside the candle,
+      // no OHLC rule, trades held up to 8 hours, up to 5 trades a day.
+      g_tf = PERIOD_M15;  g_ohlc = false;  g_exitHHMM = 0;  g_maxHoldSec = 8 * 3600;  g_maxDay = 5;
+      g_mOn[0] = true;  g_mFrom[0] = 100;   g_mTo[0] = 500;
+      g_mOn[1] = true;  g_mFrom[1] = 500;   g_mTo[1] = 900;
+      g_mOn[2] = true;  g_mFrom[2] = 900;   g_mTo[2] = 1300;
+      g_mOn[3] = true;  g_mFrom[3] = 1300;  g_mTo[3] = 1700;
+   }
+   else if(InpMode == MODE_SELECTIVE)
+   {
+      // The PDF key times, OHLC rule, out at 12:00 New York, 1 trade a day.
+      g_tf = PERIOD_M30;  g_ohlc = true;  g_exitHHMM = 1200;  g_maxHoldSec = 0;  g_maxDay = 1;
+      g_mOn[0] = true;   g_mFrom[0] = 200;   g_mTo[0] = 400;
+      g_mOn[1] = true;   g_mFrom[1] = 500;   g_mTo[1] = 700;
+      g_mOn[2] = true;   g_mFrom[2] = 930;   g_mTo[2] = 1100;
+      g_mOn[3] = false;  g_mFrom[3] = 1300;  g_mTo[3] = 1700;
+   }
+   else
+   {
+      g_tf = InpEntryTF;  g_ohlc = InpOHLC;  g_exitHHMM = InpExitHHMM;
+      g_maxHoldSec = InpMaxHoldHours * 3600;  g_maxDay = InpMaxTradesDay;
+      g_mOn[0] = InpModel1AM;  g_mFrom[0] = InpKT1From;   g_mTo[0] = InpKT1To;
+      g_mOn[1] = InpModel5AM;  g_mFrom[1] = InpKT5From;   g_mTo[1] = InpKT5To;
+      g_mOn[2] = InpModel9AM;  g_mFrom[2] = InpKT9From;   g_mTo[2] = InpKT9To;
+      g_mOn[3] = InpModel1PM;  g_mFrom[3] = InpKT13From;  g_mTo[3] = InpKT13To;
+   }
    g_tfSec = PeriodSeconds(g_tf);
-
-   g_mOn[0] = InpModel1AM;  g_mFrom[0] = InpKT1From;  g_mTo[0] = InpKT1To;
-   g_mOn[1] = InpModel5AM;  g_mFrom[1] = InpKT5From;  g_mTo[1] = InpKT5To;
-   g_mOn[2] = InpModel9AM;  g_mFrom[2] = InpKT9From;  g_mTo[2] = InpKT9To;
    for(int m = 0; m < MODELS; m++)
       ResetModelDay(m, 0);
    ArrayInitialize(g_rej, 0);
@@ -1059,10 +1128,14 @@ int OnInit()
    if(!g_silent && !g_noChart)
       ObjectsDeleteAll(0, OBJ_PFX);
 
-   Log(StringFormat("CRT 1AM EA v1.02 | entry %s | models %s%s%s | NY offset %d | bias %s (%d days) | prem/disc %s | OHLC %s | TP %s | exit %04d NY",
-                    EnumToString(g_tf), InpModel1AM ? "1AM " : "", InpModel5AM ? "5AM " : "", InpModel9AM ? "9AM " : "",
-                    InpNYOffset, EnumToString(InpBias), InpTrendDays, EnumToString(InpPremDisc), InpOHLC ? "on" : "off",
-                    InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", InpExitHHMM));
+   string models = "";
+   for(int m = 0; m < MODELS; m++)
+      if(g_mOn[m])
+         models += g_mName[m] + " ";
+   Log(StringFormat("CRT 1AM EA v1.03 | %s | entry %s | models %s| NY offset %d | bias %s (%d days) | prem/disc %s | OHLC %s | TP %s | exit %04d NY | max hold %dh | max %d/day",
+                    EnumToString(InpMode), EnumToString(g_tf), models, InpNYOffset, EnumToString(InpBias), InpTrendDays,
+                    EnumToString(InpPremDisc), g_ohlc ? "on" : "off",
+                    InpTPMode == TP_RR ? StringFormat("1:%.1f", InpRR) : "range side", g_exitHHMM, g_maxHoldSec / 3600, g_maxDay));
 
    if(!MQLInfoInteger(MQL_TESTER))
       Log("Server time " + TimeToString(TimeCurrent(), TIME_DATE | TIME_MINUTES) + " = New York " +

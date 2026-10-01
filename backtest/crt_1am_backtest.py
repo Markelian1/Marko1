@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline backtest of CRT_1AM_EA (MQL5/Experts/CRT_1AM_EA.mq5, v1.02).
+"""Offline backtest of CRT_1AM_EA (MQL5/Experts/CRT_1AM_EA.mq5, v1.03).
 
 Replays M1 bars (server time) and runs the same rules as the EA:
 
@@ -35,12 +35,19 @@ from crt_backtest import HEADER, Engine, fmt_row, load_mt5, make_synthetic, stat
 
 M15 = 900
 DAY = 86400
-MODELS = {"1AM": (1, 2), "5AM": (5, 1), "9AM": (9, 1)}   # CRT hour (NY), H4 candles in the range
+# CRT hour (NY), H4 candles in the range
+MODELS = {"1AM": (1, 2), "5AM": (5, 1), "9AM": (9, 1), "1PM": (13, 1), "5PM": (17, 1), "9PM": (21, 1)}
 
+# EA "Selective" mode: the PDF key times, M30 entries, out at 12:00 New York.
 DEFAULT = dict(ny_offset=7, tf=1800, sma=50,
                models={"1AM": (200, 400), "5AM": (500, 700), "9AM": (930, 1100)}, bias="sma", pd="range", ohlc=True,
-               tp="rr", rr=2.0, min_rr=1.5, sl_buffer=0.30, exit_hhmm=1200, max_day=1,
+               tp="rr", rr=2.0, min_rr=1.5, sl_buffer=0.30, exit_hhmm=1200, max_hold=0, max_day=1, fri_close=1600,
                min_sl=1.00, min_sl_x=4.0, max_spread=0.50)
+SELECTIVE = DEFAULT
+# EA "Active" mode: every H4 candle from 1AM to 5PM, M15 entries, no OHLC rule,
+# trades held up to 8 hours, up to 5 trades a day.
+ACTIVE = dict(DEFAULT, tf=900, ohlc=False, exit_hhmm=0, max_hold=8 * 3600, max_day=5,
+              models={"1AM": (100, 500), "5AM": (500, 900), "9AM": (900, 1300), "1PM": (1300, 1700)})
 
 
 def hhmm_min(v):
@@ -128,6 +135,9 @@ def run(bars, cfg):
             return "bias"
         if pos is not None:
             return "position open"
+        ny_t = t - off
+        if cfg.get("fri_close", 0) > 0 and (ny_t // DAY + 3) % 7 == 4 and (ny_t % DAY) // 60 >= hhmm_min(cfg["fri_close"]) - 240:
+            return "Friday"
         day_ny = (t - off) - (t - off) % DAY
         if cfg["max_day"] > 0 and entries_day[day_ny] >= cfg["max_day"]:
             return "max trades"
@@ -174,7 +184,7 @@ def run(bars, cfg):
 
             ny = closed[0] - off
             for name in cfg["models"]:
-                crt_ny = ny - ny % DAY + MODELS[name][0] * 3600
+                crt_ny = ny - (ny - MODELS[name][0] * 3600) % DAY     # latest start of this candle
                 if not crt_ny <= ny < crt_ny + 4 * 3600:
                     continue
                 d = md.get(name)
@@ -219,6 +229,15 @@ def run(bars, cfg):
             continue
 
         # ---- exit time ---------------------------------------------------
+        fri = cfg.get("fri_close", 0)
+        if fri > 0 and ((t - off) // DAY + 3) % 7 == 4 and ((t - off) % DAY) // 60 >= hhmm_min(fri):
+            close(pos, o if pos["dir"] == 1 else o + spread, t, "time")
+            pos = None
+            continue
+        if cfg.get("max_hold", 0) > 0 and t - pos["t_in"] >= cfg["max_hold"]:
+            close(pos, o if pos["dir"] == 1 else o + spread, t, "time")
+            pos = None
+            continue
         if cfg["exit_hhmm"] > 0:
             now_ny = t - off
             exit_ny = now_ny - now_ny % DAY + hhmm_min(cfg["exit_hhmm"]) * 60
@@ -275,19 +294,23 @@ def main():
 
     base = dict(DEFAULT, ny_offset=args.ny_offset)
     configs = [
-        ("EA defaults v1.02", base),
-        ("1AM only", dict(base, models={"1AM": (200, 400)})),
-        ("entry M15", dict(base, tf=900)),
-        ("trend 20 days", dict(base, sma=20)),
-        ("trend 100 days", dict(base, sma=100)),
-        ("bias off", dict(base, bias="none")),
-        ("bias daily CRT", dict(base, bias="d1")),
-        ("bias CRT|prev (v1.01)", dict(base, bias="d1|prev")),
-        ("OHLC off", dict(base, ohlc=False)),
-        ("prem/disc off", dict(base, pd="off")),
-        ("RR 1.5", dict(base, rr=1.5)),
-        ("RR 3", dict(base, rr=3.0)),
-        ("TP range side", dict(base, tp="range")),
+        ("EA Active mode", dict(ACTIVE, ny_offset=args.ny_offset)),
+        ("  Active, entry M30", dict(ACTIVE, ny_offset=args.ny_offset, tf=1800)),
+        ("  Active, trend 20", dict(ACTIVE, ny_offset=args.ny_offset, sma=20)),
+        ("  Active, trend 100", dict(ACTIVE, ny_offset=args.ny_offset, sma=100)),
+        ("  Active, bias off", dict(ACTIVE, ny_offset=args.ny_offset, bias="none")),
+        ("  Active, OHLC on", dict(ACTIVE, ny_offset=args.ny_offset, ohlc=True)),
+        ("  Active, hold 4h", dict(ACTIVE, ny_offset=args.ny_offset, max_hold=4 * 3600)),
+        ("  Active, RR 1.5", dict(ACTIVE, ny_offset=args.ny_offset, rr=1.5)),
+        ("EA Selective mode", base),
+        ("  Selective, 1AM only", dict(base, models={"1AM": (200, 400)})),
+        ("  Selective, entry M15", dict(base, tf=900)),
+        ("  Selective, trend 20", dict(base, sma=20)),
+        ("  Selective, trend 100", dict(base, sma=100)),
+        ("  Selective, bias off", dict(base, bias="none")),
+        ("  Selective, OHLC off", dict(base, ohlc=False)),
+        ("  Selective, RR 1.5", dict(base, rr=1.5)),
+        ("  Selective, RR 3", dict(base, rr=3.0)),
     ]
     print(HEADER)
     for name, cfg in configs:
@@ -295,7 +318,7 @@ def main():
         print(fmt_row(name, stats(trades)))
         print(fmt_row("  before forward", stats([t for t in trades if t["t_in"] < fwd])))
         print(fmt_row("  forward", stats([t for t in trades if t["t_in"] >= fwd])))
-        if name.startswith("EA defaults"):
+        if name.startswith("EA "):
             by_year = defaultdict(list)
             for t in trades:
                 by_year[datetime.fromtimestamp(t["t_in"], timezone.utc).year].append(t)

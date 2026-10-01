@@ -154,7 +154,7 @@ Optimizimi 2 (vetëm "Require an active HTF CRT in the same direction"):
 
 # CRT 1AM EA (MT5): strategjia nga PDF-të "1AM CRT" dhe "Time & Price"
 
-Skedari: `Experts/CRT_1AM_EA.mq5` (v1.02). Është EA e re, e veçantë nga CRT_MTF_EA.
+Skedari: `Experts/CRT_1AM_EA.mq5` (v1.03). Është EA e re, e veçantë nga CRT_MTF_EA.
 Nuk hap trade në çdo CRT, por vetëm në qiririn H4 të orës **1:00 New York** dhe
 vetëm në orën kyçe.
 
@@ -186,6 +186,37 @@ EA-ja i llogarit të gjitha oraret në kohën e New York-ut:
 - Kontroll: në MT5 hape **Market Watch**; ora lart është ora e serverit. Kur në New York
   është 00:00, serveri duhet të tregojë 07:00. Nëse jo, ndryshoje `InpNYOffset`.
 - Te paneli i EA-së shfaqet "New York time"; duhet të përputhet me orën reale të NY.
+
+## v1.03: dy mënyra, Active dhe Selective (`InpMode`)
+
+Kërkesa ishte 4–5 trade në ditë. Testi me historikun real tregon se kjo metodë nuk i jep:
+- Edhe me çdo qiri H4 dhe pa asnjë filtër, sinjalet dalin rreth 1.5–1.9 në ditë në M5 dhe 0.9–1.5 në M15.
+- Pa filtrat ato humbin (−0.02R deri −0.05R për trade).
+- Sa më shumë trade, aq më i dobët është çdo trade.
+
+Mënyra më aktive që fiton ende është **Active** dhe është vlera fillestare:
+
+| | Active (fillestare) | Selective |
+|---|---|---|
+| Qirinjtë H4 | 1AM, 5AM, 9AM, 1PM, gjithë qiriri | 1AM 2–4, 5AM 5–7, 9AM 9:30–11 |
+| Hyrja | M15 | M30 |
+| Rregulli OHLC | jo | po |
+| Dalja | SL/TP ose pas 8 orësh | SL/TP ose në 12:00 NY |
+| Trade në ditë | deri 5 (një njëherësh) | 1 |
+| E përbashkët | trend 50 ditë, premium/discount, TP 1:2, mbyllje të premten në 16:00 NY | |
+
+Rezultatet (simulim me historikun e FP Trading, 0.5% rrezik për trade):
+
+| | Periudha | Trade | Në javë | Win | PF | Max DD | Fitimi |
+|---|---|---|---|---|---|---|---|
+| **Active** | 2022.07–2026.09 (M15) | 932 | ~4 | 44% | 1.23 | 13.4R | +72% |
+| Active, rregullat në M30 | 2020.02–2026.09 | 842 | ~2.5 | 45% | 1.19 | 18.1R | çdo vit + |
+| **Selective** | 2020.02–2026.09 (M30) | 74 | ~0.2 | 55% | 2.17 | 6.2R | +19.7% |
+
+- **Active** është pozitiv çdo vit (2022 +5R, 2023 +34R, 2024 +21R, 2025 +43R, 2026 +8R).
+  Avantazhi vjen nga **trendi ditor**: pa të, Active humb (−0.02R). Në një vit pa trend, prit rezultat afër zeros.
+- Avantazhi për trade është i hollë (+0.12R), por mbetet pozitiv edhe me spread +0.30 $ (PF 1.12).
+- Seria më e gjatë e humbjeve në Active është 11 trade radhazi (≈ −5.5% me 0.5% rrezik).
 
 ## v1.02: testi me historikun real të FP Trading (2020–2026)
 
@@ -244,9 +275,10 @@ kontrollo `InpNYOffset`.
 
 1. Kopjo `Experts/CRT_1AM_EA.mq5` te `MQL5/Experts/`, hape në MetaEditor, **F7**.
 2. Strategy Tester:
-   - Expert: `CRT_1AM_EA`, Symbol: XAUUSD, Timeframe: M30
-   - Date: **2020.03.01 – 2026.09.30**, Forward: **No**
+   - Expert: `CRT_1AM_EA`, Symbol: XAUUSD, Timeframe: M15
+   - Date: **2022.07.01 – 2026.09.30**, Forward: **No**
    - Modeling: **1 minute OHLC**
+   - `InpMode`: **Active** (fillestare) ose **Selective**
 3. Te **Inputs**: klik i djathtë → **Reset**. Mos ndrysho asgjë në provën e parë.
 4. Pas testit dërgo skedën **Backtest** dhe rreshtat `CRT 1AM FUNNEL`, `CRT 1AM REJECTED`
    dhe `CRT 1AM SUMMARY` nga **Journal**.
