@@ -189,6 +189,37 @@ hyrja te thyerja e OB në M15, brenda strukturës kohore H4, në drejtimin e tre
 
 ---
 
+# Kërkimi i tregut: si sillet ari dhe çfarë mund të shtohet si "agjent"
+
+Kërkimi në web dha tri ide të njohura:
+- efektet e sesioneve, ku blerjet e Azisë zbehen në Londër/New York;
+- momentumi i trendit (Moskowitz, Ooi & Pedersen 2012);
+- reagimi pas sweep-eve të likuiditetit.
+
+U testuan me historikun e FP Trading (M30, 2020.02–2026.09).
+
+**1. Lëvizja sipas orës (NY).** Ora 18:00 (hapja e ditës së re) del pozitive në të tri periudhat
+(+1.9 / +2.2 / +3.3 bp, t = 1.8 / 2.8 / 3.2). Sesioni i Azisë (18–02) mban pjesën më të madhe të rritjes:
++4.0 / +1.8 / +5.2 bp në ditë. Është efekt kohor, prandaj nuk u përdor (kërkesa: pa tregtim me orar).
+
+**2. Trendi ditor.** Nuk parashikon në mënyrë të qëndrueshme 5 ditët e ardhshme. Në 2020–21 tregu kthehej mbrapsht,
+në 2024–26 vazhdonte trendin. Vetëm, trendi nuk mjafton; si filtër i sweep-it funksionon.
+
+**3. Agjentë klasikë pa orë** (`backtest/agents_lab.py`; 2020.02–2023.06 / 2023.07–2026.09):
+
+| Agjenti | Periudha 1 | Periudha 2 |
+|---|---|---|
+| Pullback RSI-2 në trend, H1 | PF 0.88–0.92 | PF 0.92–0.94 |
+| Pullback RSI-2 në trend, H4 | PF 0.98–1.03 | PF 1.05–1.10 |
+| Breakout Donchian 20/55, H1/H4 | PF 0.73–0.90 | PF 1.27–1.89 |
+| Breakout NR7 ditor në trend | PF 1.32 (67 trade) | PF 1.72 (66 trade) |
+
+Donchian varet nga regjimi: humb në treg anësor, fiton në trend. NR7 është pozitiv në të dyja, por
+me shumë pak trade (~20 në vit) për ta konsideruar të provuar. Avantazhi i qëndrueshëm mbetet te
+**sweep-i i qiririt H4 + thyerja e OB-së + retest-i, në drejtimin e trendit** (PRO24).
+
+---
+
 # CRT PRO24 (MT5): versioni 24 orë, pa orare fikse
 
 Skedari: `Experts/CRT_1AM_PRO24.mq5` (v1.05). Është EA më vete; `CRT_1AM_EA.mq5` nuk preket.
