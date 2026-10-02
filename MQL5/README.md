@@ -331,6 +331,69 @@ mund të krahasohen në MT5.
 
 Kodi **nuk është kompiluar** këtu. Nëse F7 jep gabime, dërgoji.
 
+### v3.00: ekzekutim në M5, me logjika të reja
+
+Me `backtest/google_m5.py` u provuan **1 200 variante** mbi qirinj M5:
+- 5 logjika hyrjeje, ku çdo vendim merret në mbylljen e qiririt M5;
+- 5 orare range-i (11:30–14:30, 15:00–17:00, 16:30–17:00, 10:00–11:00, 01:00–09:00);
+- 3 lloje SL-je, TP 1.5/2/3R, trendi D1/H1/pa trend, me dalje ose pa dalje në 23:00.
+
+Logjikat:
+
+| Logjika | Hyrja |
+|---|---|
+| close | qiriri M5 mbyllet përtej range-it (+0.50 $) → hyrje me treg |
+| retest | pas asaj mbylljeje, limit te skaji i range-it |
+| fvg | mbyllje përtej range-it që lë FVG → limit në mes të FVG-së |
+| pullback | pas thyerjes, stop te qiriri i parë kundër saj |
+| fade | qiriri del jashtë range-it dhe mbyllet brenda (sweep) → hyrje në anën tjetër |
+
+Të dhënat M5 janë vetëm 2025.05–2026.09. Për më shumë histori u përdorën të njëjtat rregulla me qirinj M15
+(2022.07–2025.04) dhe M30 (2020–22). Zgjedhja u bë vetëm me tri periudhat e para. **2026 mbeti jashtë
+zgjedhjes.**
+
+Vetëm dy logjika kaluan të gjitha provat:
+- fitojnë në 4 periudhat;
+- e mundin kontrollin pa sinjal;
+- mbeten pozitive kur ndryshohen TP, buffer-i dhe ora ±30 min;
+- japin rezultat të njëjtë kur hyrjet dhe daljet simulohen në M1 (2026.06–09).
+
+FVG, pullback dhe fade prishen kur ndryshohet TP-ja ose ora (p.sh. FVG me TP 1.5–2R: PF 0.72–0.74 në 2025).
+
+| Logjika (trendi ditor) | M30 2020–22 | M15 2022–25 | M5 2025 | **M5 2026** | Kontrolli pa sinjal |
+|---|---|---|---|---|---|
+| **1 NY CLOSE M5**: range 15:00–17:00 (08:00–10:00 NY), mbyllje M5 përtej, SL në mes, TP 3R, dalje 16:00 NY | PF 1.38, +17R | PF 1.46, +35R | PF 1.55, +17R | **PF 1.16, +7R** | 0.96 / 1.06 / 1.37 / 0.96 |
+| **2 AZIA RETEST M5**: range 01:00–09:00 (18:00–02:00 NY), limit te skaji pas mbylljes përtej, SL përtej range-it, TP 2R | PF 1.15, +11R | PF 1.29, +41R | PF 1.56, +15R | **PF 1.64, +19R** | 0.89 / 1.10 / 1.25 / 1.06 |
+
+Me rrezik 0.25%, 2020.03–2026.09:
+
+| | Fitimi | DD maksimal | Vetëm M5 (2025.05–26.09) |
+|---|---|---|---|
+| v2.00 (urdhër stop) | +48.5% | 10.3% | +18.2%, DD 5.1% |
+| 1 NY CLOSE M5 | +20.4% | **1.7%** | +5.8%, DD 1.4% |
+| 2 AZIA RETEST M5 | +23.5% | 5.1% | +8.7%, DD 2.5% |
+| **v3.00 = 1 + 2** | **+48.7%** | **3.9%** | +15.1%, DD 2.2% |
+
+v3.00 jep të njëjtin fitim si v2.00, me më pak se gjysmën e DD-së.
+
+**Me GOLD MULTI PRO** (0.1%, 2020–26):
+- Logjika 1 e përmirëson në të tria periudhat: R/DD nga 5.0 / 6.4 / 6.5 në 6.2 / 7.6 / 8.9, fitimi nga +38.1% në
+  +48.8%, DD nga 2.02% në 2.14%.
+- Logjika 2 nuk e përmirëson (R/DD bie në 2020–22).
+- Nuk u fut ende, sepse është me orar fiks. Mund të shtohet si modul nëse e do.
+
+`Experts/GOOGLE_STRATEG_PRO.mq5` v3.00:
+- `InpSignalTF = M5`.
+- Logjikat 1 dhe 2 janë aktive, me magic 123460 dhe 123461.
+- Logjika e v2.00 (urdhër stop) mbetet si logjika 3, joaktive, me magic 123462.
+- Çdo logjikë ka oraret, buffer-in, SL-në, TP-në dhe daljen me orë si input-e.
+
+Ditari ka kolonën "logjika", dhe arsyeja shkruan cili qiri M5 dha sinjalin dhe në ç'çmim u mbyll.
+
+**Testi në MT5:**
+- Grafiku XAUUSD M5, "Every tick based on real ticks", 2020.01–2026.09.
+- Ky test kontrollon edhe vitet që këtu u testuan me M15 / M30.
+
 ---
 
 # GOLD MULTI PRO (MT5): EA e re me 6 strategji dhe analizë për çdo trade
