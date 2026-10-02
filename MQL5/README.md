@@ -250,6 +250,89 @@ Problemet e kodit:
 
 ---
 
+# Testi i "GOOGLE_STRATEG_XAUUSD" (kod i jashtëm) dhe GOOGLE STRATEG PRO
+
+Logjika e v1.10:
+- Range-i merret nga qirinjtë M15 11:30–14:30 të serverit, pra 04:30–07:30 NY.
+- Në 14:30 vendoset një urdhër stop në drejtim të trendit H1, ku trendi H1 = mbyllja kundrejt EMA 200:
+  buy stop te maja + 1.5 $, ose sell stop te fundi − 1.5 $.
+- SL vendoset në mes të range-it (gjysma e range-it + 1.5 $), TP 3R, breakeven në +1R.
+- Urdhri anulohet në 18:00. Rreziku është 1%.
+
+U simulua rresht për rresht me `backtest/google_strateg.py`.
+
+**Krahasimi me MT5 (2023.01–2026.09):** MT5 dha 627 trade (384 long, 243 short), PF 0.95, −12.7% dhe DD 32%.
+Simulimi gjen 624 trade (382 / 242), pra hyrjet janë të njëjta. PF-ja varet nga qiriri i mbushjes. Me SL në mes,
+në M15 nuk dihet nëse çmimi preku më parë hyrjen apo SL-në. Prandaj PF del 0.66 kur supozohet më e keqja
+dhe 1.09 kur ndiqet rruga e qiririt. MT5 bie mes tyre. Kjo tregon edhe arsyen e humbjes: shumë thyerje kthehen
+mbrapsht brenda pak minutash (sweep), pikërisht ajo që CRT-ja jonë kërkon për të hyrë në anën tjetër.
+
+### Hap pas hapi (supozimi më i keq te qiriri i mbushjes)
+
+| Varianti | 2020.03–22.06 | 2022.07–24.06 | 2024.07–26.09 | M5 2025.07–26.09 | M1 2026.06–09 |
+|---|---|---|---|---|---|
+| Siç vjen | PF 0.57, −101R | PF 0.53, −97R | PF 0.78, −52R | PF 0.93, −8R | PF 0.91, −2R |
+| + trendi ditor (SMA 50 D1) në vend të EMA 200 H1 | PF 0.49, −112R | PF 0.58, −82R | PF 0.82, −41R | PF 1.05, +6R | PF 1.35, +7R |
+| + pa breakeven | PF 0.60, −108R | PF 0.72, −72R | PF 0.96, −11R | PF 1.20, +30R | PF 1.37, +11R |
+| + SL përtej gjithë range-it | PF 1.05, +12R | PF 1.06, +15R | PF 1.34, +87R | PF 1.46, +65R | PF 0.66, −13R |
+| + range 15:00–17:00, anulim 21:00 (**v2.00**) | PF 1.18, +27R | PF 1.33, +44R | PF 1.46, +90R | PF 1.69, +75R | PF 0.60, −10R |
+| v2.00 vetëm blerjet | PF 1.65, +45R | PF 1.61, +42R | PF 1.64, +89R | PF 2.01, +68R | PF 0.43, −8R |
+| v2.00 vetëm shitjet | PF 0.77, −18R | PF 1.03, +2R | PF 1.01, +1R | PF 1.16, +7R | PF 0.82, −2R |
+| Kontroll: pa breakout, hyrje në 17:00 sipas trendit ditor | PF 1.06, +26R | PF 1.22, +81R | PF 1.41, +162R | PF 1.54, +115R | PF 0.59, −23R |
+
+Me SL përtej range-it, rezultati është i njëjtë në M1, M5 dhe M15. Prandaj këto shifra janë të besueshme.
+Fqinjët e orarit (14:30–16:30, 15:30–17:30, anulim 19:00, 08:00–11:00) japin PF 1.13–1.79 në të tri periudhat.
+
+**Kujdes:**
+- Kontrolli pa breakout fiton po aq, dhe shitjet janë rreth zeros. Fitimi vjen kryesisht nga ndjekja e trendit
+  ditor të arit, jo nga thyerja e range-it.
+- Me TP 3R fiton vetëm rreth 31% e trade-ve, prandaj ndodhin 19 humbje rresht.
+- Në 3 muajt e fundit (2026.06–09) ka dhënë −10R.
+
+### Krahasimi me GOLD MULTI PRO (2020.03–2026.09)
+
+| | Trade | Win | PF | R | DD (R) | R/DD | Humbje rresht | 0.1% rrezik |
+|---|---|---|---|---|---|---|---|---|
+| GOOGLE STRATEG siç vjen | 1 059 | 35% | 0.63 | −250 | 253 | – | 16 | −22.2%, DD 22.5% |
+| GOOGLE STRATEG PRO v2.00 | 683 | 31% | 1.34 | +160 | 43 | 3.7 | 19 | +17.2%, DD 4.2% |
+| GOLD MULTI PRO | 2 444 | 46% | 1.26 | +325 | 20 | **16.0** | 13 | +38.1%, DD 2.0% |
+
+**Pse nuk u fut te GOLD MULTI PRO:**
+- Fitimi rritet, por DD shkon nga 2.02% në 3.95% (me 11:30–14:30, në 5.10%).
+- R/DD bie në 2020–22 dhe 2024–26.
+- Është strategji me orar fiks.
+
+E kundërta, d.m.th. hyrja në anën tjetër kur thyerja dështon (stil CRT), humb në dy nga tri periudhat
+(PF 0.77 / 1.08 / 0.65). CRT H4 me retest OB-je në GOLD MULTI PRO e bën këtë ide më mirë.
+
+### GOOGLE STRATEG PRO v2.00 (`Experts/GOOGLE_STRATEG_PRO.mq5`)
+
+**Ndryshimet e rregullave:**
+- Trendi është ditor (SMA 50 D1).
+- SL vendoset përtej gjithë range-it.
+- Pa breakeven.
+- Range-i është 15:00–17:00 server (08:00–10:00 NY), anulimi në 21:00.
+- Rreziku i parazgjedhur është 0.25%. Me 1%, DD-ja 2023–26 do të ishte rreth 25%.
+
+Të gjitha rregullat e origjinalit mbeten si input-e (`InpTrend`, `InpSLMode`, `InpBreakeven`, oraret), që të
+mund të krahasohen në MT5.
+
+**Gabimet e origjinalit që u rregulluan:**
+- Kur urdhri nuk vendosej (çmimi përtej hyrjes, pa trend, refuzim i Stops Level), `OnTick` dilte me `return`
+  para `ManageActiveTrades`. Kështu breakeven-i nuk kontrollohej për pozicionet e hapura.
+- Buffer-i ishte në "pips" (`_Point × 10`), që ndryshon me numrin e shifrave të brokerit. Tani jepet në dollarë.
+- Mesazhet e gabimit përsëriteshin në çdo tick.
+
+**Shtesat:**
+- Ditari `Common\Files\GOOGLE_STRATEG_PRO_journal.csv` me arsyen e çdo hyrjeje: range-i, trendi në %,
+  hyrja, SL, TP, dalja, R dhe $.
+- Vizatimi i range-it dhe i niveleve, me tooltip.
+- Panel me statusin dhe përmbledhje në fund të testit.
+
+Kodi **nuk është kompiluar** këtu. Nëse F7 jep gabime, dërgoji.
+
+---
+
 # GOLD MULTI PRO (MT5): EA e re me 6 strategji dhe analizë për çdo trade
 
 Skedari: `Experts/GOLD_MULTI_PRO.mq5` (v1.05), magic bazë **880100**.
