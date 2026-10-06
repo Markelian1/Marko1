@@ -1,0 +1,20 @@
+
+=== XAUUSD M5, 2026-01-01 .. 2026-10-01 ===
+                                  trades  fills (=deals MT5)     win%       PF     totR  maxDD_R  1%risk_x
+MT5 Strategy Tester (EA v1.00)       NaN            1121.000      NaN    0.960      NaN   25.500     0.932
+Python: si EA v1.00, kosto 7     413.000            1123.000   35.351    0.951   -9.385   31.078     0.889
+Python: EA v1.01, kosto 0        386.000            1097.000   36.788    0.996   -0.749   26.916     0.969
+Python: EA v1.01, kosto 7        386.000            1097.000   36.788    0.978   -4.200   29.092     0.937
+Python: baza pa module, kosto 7  386.000             386.000   37.306    0.900  -22.570   46.484     0.775
+Python: + C, kosto 7             386.000             386.000   38.342    0.948  -11.514   39.687     0.865
+
+=== XAUUSD M15, 2026-01-01 .. 2026-10-01 ===
+                                  trades  fills (=deals MT5)     win%       PF     totR  maxDD_R  1%risk_x
+MT5 Strategy Tester (EA v1.00)       NaN            1000.000      NaN    0.880      NaN   22.400     0.838
+Python: si EA v1.00, kosto 7     413.000            1028.000   32.688    0.917  -14.681   21.589     0.846
+Python: EA v1.01, kosto 0        363.000             974.000   35.813    0.954   -7.927   18.800     0.905
+Python: EA v1.01, kosto 7        363.000             974.000   35.537    0.945   -9.529   19.318     0.891
+Python: baza pa module, kosto 7  367.000             367.000   35.422    0.970   -6.802   24.610     0.905
+Python: + C, kosto 7             363.000             363.000   35.813    0.946  -11.676   27.719     0.864
+
+1%risk_x = equity perfundimtare / fillestare me 1% rrezik per sinjal

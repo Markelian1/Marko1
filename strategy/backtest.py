@@ -49,6 +49,9 @@ class Config:
     c_lo: float = 0.6
     c_hi: float = 1.8
     c_horizon_note: str = field(default="fmeanH = mean forecast of next 8 bars", repr=False)
+    # EA v1.00 kept executing pending B slices after SL/TP had closed the position
+    # (re-entering when price came back inside SL..TP). Only for reproducing that run.
+    emulate_v100_reentry: bool = False
 
 
 def prepare(path):
@@ -129,7 +132,10 @@ def run(d, cfg):
                                    "filled": filled, "n_fills": len(pos["fills"]),
                                    "reason": reason, "bars": j - pos["bar"],
                                    "risk_pts": pos["risk"] / POINT})
-                    pos = None
+                    if cfg.emulate_v100_reentry and pos["pending"]:
+                        pos["fills"], pos["next_bar"] = [], j + 1
+                    else:
+                        pos = None
             elif not pos["pending"]:
                 pos = None
         # 3) signal at the close of bar j

@@ -15,7 +15,7 @@
 //|  Skedar i vetem: klasa CKalmanVolume eshte brenda ketij skedari.  |
 //+------------------------------------------------------------------+
 #property copyright "Markelian1/Marko1"
-#property version   "1.00"
+#property version   "1.01"
 
 #include <Trade\Trade.mqh>
 
@@ -652,6 +652,7 @@ double         g_sl          = 0.0;
 double         g_tp          = 0.0;
 double         g_lotsLeft    = 0.0;
 int            g_slicesLeft  = 0;
+int            g_slicesFilled = 0;      // copa te ekzekutuara per sinjalin aktual
 double         g_lastAdj     = 1.0;
 
 void FeedBar(datetime t, double volume);
@@ -956,6 +957,7 @@ void ExecuteSlice()
      {
       g_lotsLeft -= lots;
       g_slicesLeft--;
+      g_slicesFilled++;
      }
    else
       PrintFormat("KalmanVolume: urdhri deshtoi, retcode=%u", g_trade.ResultRetcode());
@@ -1044,6 +1046,7 @@ void TrySignal(datetime barTime)
    g_tp = ref + dir * InpRR * dist;
    g_lotsLeft = LotsForRisk(dist);
    g_slicesLeft = InpUseB ? InpB_Slices : 1;
+   g_slicesFilled = 0;
    g_signalTime = barTime;
    g_tradesToday++;
    ExecuteSlice();
@@ -1097,6 +1100,13 @@ void OnTick()
 
    //--- 2) menaxhimi i tregtise se hapur
    int npos = CountPositions();
+   //--- pozicioni i sinjalit u mbyll nga SL/TP: copat e mbetura te modulit B anulohen
+   //    (perndryshe EA rihyn ne nje tregti te deshtuar kur cmimi kthehet brenda SL-TP)
+   if(g_slicesLeft > 0 && g_slicesFilled > 0 && npos == 0)
+     {
+      g_slicesLeft = 0;
+      g_lotsLeft = 0.0;
+     }
    if(npos > 0 && g_signalTime == 0)
       g_signalTime = EarliestPositionTime();    // pas restartit te EA/terminalit
    if(npos > 0 || g_slicesLeft > 0)

@@ -1,9 +1,0 @@
-                                   trades  fills (=deals MT5)     win%       PF     totR  maxDD_R  1%risk_x
-MT5 Strategy Tester                   NaN            1121.000      NaN    0.960      NaN   25.500     0.932
-Python: EA default, kosto 0       386.000            1097.000   36.788    0.996   -0.749   26.916     0.969
-Python: EA default, kosto 7 pike  386.000            1097.000   36.788    0.978   -4.200   29.092     0.937
-Python: baza pa module            386.000             386.000   37.565    0.916  -18.877   44.219     0.804
-Python: + C                       386.000             386.000   38.601    0.964   -7.871   37.378     0.897
-Python: + A + B + C               118.000             320.000   36.441    0.996   -0.240   10.641     0.991
-
-1%risk_x = equity perfundimtare / fillestare me 1% rrezik per sinjal (MT5: 9316.13 / 10000)

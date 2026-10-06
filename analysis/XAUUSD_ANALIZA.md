@@ -215,39 +215,44 @@ Për tre familjet më premtuese, 162–243 kombinime parametrash u zgjodhën sip
 - **Sinjal më i mirë hyrjeje:** zëvendëso sinjalin bazë me një hyrje që ka avantazh të provuar, dhe mbaj B + C si menaxhim rreziku.
 - **Volatilitet, jo drejtim:** përdor modelin si filtër volatiliteti, p.sh. mos tregto në bar-e me vëllim të pritshëm shumë të ulët. Kjo kërkon testin e vet.
 
-## 7. Testi në MT5 Strategy Tester: EA-ja = backtest-i Python
+## 7. Testi në MT5 Strategy Tester dhe krahasimi me Python
 
-### Testi
+### Testet
+
+Dy teste me EA v1.00:
 
 | Fusha | Vlera |
 |---|---|
 | Llogaria | FP Markets demo, hedge |
-| Simboli / timeframe | XAUUSD **M5** |
+| Simboli | XAUUSD |
 | Periudha | 01.01.2026 – 01.10.2026 |
 | Modelimi | Real ticks |
 | Kapitali | 10,000 USD |
 | Parametrat | Default |
 
-Krahasimi me të njëjtat rregulla në Python (`strategy/compare_mt5_m5.py`, dalja në `results/mt5_vs_python_m5_2026.txt`):
+Krahasimi me të njëjtat rregulla në Python (`strategy/compare_mt5.py`, dalja në `results/mt5_vs_python_2026.txt`):
 
-| | Pozicione (deals) | PF | Equity në fund | Max DD |
+| | Pozicione | PF | Equity | Max DD |
 |---|---|---|---|---|
-| **MT5 Strategy Tester** | ~1121 | 0.96 | −6.8% | 25.5% |
-| Python, kosto 0 | 1097 | 1.00 | −3.1% | 27 R |
-| Python, kosto 7 pikë | 1097 | 0.98 | −6.3% | 29 R |
+| **MT5 M15 (v1.00)** | ~1000 | 0.88 | −16.2% | 22.4% |
+| Python M15, si v1.00, kosto 7 | 1028 | 0.92 | −15.4% | 21.6 R |
+| Python M15, **v1.01**, kosto 7 | 974 | 0.95 | −10.9% | 19.3 R |
+| **MT5 M5 (v1.00)** | ~1121 | 0.96 | −6.8% | 25.5% |
+| Python M5, si v1.00, kosto 7 | 1123 | 0.95 | −11.1% | 31.1 R |
+| Python M5, **v1.01**, kosto 7 | 1097 | 0.98 | −6.3% | 29.1 R |
 
-### Çfarë tregon
+### Gabimi i gjetur në EA v1.00
 
-- **EA-ja bën atë që u testua në Python.** Numri i pozicioneve ndryshon me 2%, dhe rezultati përputhet me versionin me ~7 pikë kosto, që ka shumë gjasë është komisioni i llogarisë.
-- **Rezultati negativ nuk është gabim në kod,** por mungesë avantazhi e sinjalit të hyrjes, siç parashikoi analiza.
-- **Z-score −20 në MT5** vjen nga moduli B: çdo sinjal hap ~3 pozicione që mbyllen bashkë me të njëjtin rezultat. Nuk është problem.
+- **Çfarë ndodhte:** me modulin B, pasi SL/TP mbyllte pozicionin, copat e mbetura nuk anuloheshin. Nëse çmimi kthehej brenda SL–TP, EA rihynte në një tregti që kishte dështuar tashmë.
+- **Prova:** kur ky gabim simulohet në Python, numri i pozicioneve përputhet me MT5 (M5: 1123 kundrejt 1121) dhe rezultati M15 afrohet shumë (−15.4% kundrejt −16.2%).
+- **Rregullimi:** EA **v1.01** anulon copat e mbetura sapo pozicioni i sinjalit mbyllet.
 
-### Modulet në të njëjtën periudhë M5
+### Çfarë pritet nga v1.01
 
-| Modulet | Total R | Max DD |
-|---|---|---|
-| Baza pa module | −18.9 | 44 R |
-| + C | −7.9 | 37 R |
-| + B + C | −0.7 | 27 R |
+- **Për 2026:** rreth −11% në M15 dhe −6% në M5 (me ~7 pikë kosto). **Edhe pa gabimin, strategjia humb në 2026.**
+- **Modulet në 2026:**
+  - në M5, C dhe B i ulin humbjet: −22.6R pa module → −4.2R me B + C;
+  - në M15 2026 nuk ndihmojnë: −6.8R pa module, −9.5R me B + C.
 
-Edhe këtu modulet i ulin humbjet, por nuk krijojnë fitim.
+  Një arsye e mundshme është ndryshimi i feed-it të tick volume në 2026 (seksioni 1.5).
+- **Z-score rreth −20 në MT5** vjen nga moduli B: disa pozicione për sinjal mbyllen bashkë me të njëjtin rezultat. Nuk është problem.
