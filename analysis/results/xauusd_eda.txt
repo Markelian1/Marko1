@@ -1,0 +1,40 @@
+
+==============================================================================
+1. Struktura e te dhenave
+==============================================================================
+  Bare: 100279  nga 2022-07-04 03:15:00  deri 2026-10-01 01:30:00
+  Dite: 1097   dite me 92 bare (01:00-23:45): 1051
+  VOL real = 0 ne te gjitha bare -> perdoret TICK VOLUME
+  Bari i pare i dites: {'01:00': 1089, '00:00': 5, '03:15': 1}
+  Bari i fundit:       {'23:45': 1057, '21:30': 14, '21:15': 10, '19:45': 3}  (21:15/21:30 = mbyllje e hershme festash SHBA)
+
+==============================================================================
+2. Shperndarja: vellimi vs log-vellimi
+==============================================================================
+  tick volume      skew=+2.75  kurtosis=+16.87
+  log tick volume  skew=-0.61  kurtosis=+2.43
+
+==============================================================================
+3. Sezonaliteti brenda dites (forma e phi)
+==============================================================================
+  Bin-et me vellim me te larte: 16:30 (3397), 17:00 (3259), 16:45 (3144), 17:15 (2870), 17:30 (2721)
+  Bin-et me vellim me te ulet:  01:15 (472), 01:30 (491), 01:45 (493), 23:30 (498), 23:45 (527)
+  Raporti max/min i vellimit tipik: 7.2x
+  Spread median (pike): min 14, max 20 ne 23:45; p95 max 46 ne 23:45
+
+==============================================================================
+4. Komponenti ditor (eta) dhe dinamika brenda dites (mu)
+==============================================================================
+  Autokorrelacioni i nivelit ditor (lag 1,2,5,10,20 dite): 0.86, 0.79, 0.72, 0.64, 0.53
+  Autokorrelacioni brenda dites pas heqjes se nivelit ditor dhe sezonalitetit
+    (lag 1,2,4,8,16 bare): 0.74, 0.62, 0.46, 0.25, 0.07
+  Ndarja e variances se log-vellimit: sezonaliteti 42%, niveli ditor 25%, mbetja brenda dites 30%
+  Niveli ditor sipas dites se javes (exp, 1.00 = mesatare): E hene 0.98, E marte 0.98, E merkure 0.99, E enjte 1.01, E premte 0.99
+
+==============================================================================
+5. Lidhja vellim - volatilitet (baze per modulin C)
+==============================================================================
+  log(range) = -4.58 + 0.79 * log(tick volume)   R^2 = 0.37
+  -> range ~ V^0.79  (hipoteza 'mixture of distributions' jep ~0.5)
+
+Grafiket: /home/user/Marko1/analysis/figures

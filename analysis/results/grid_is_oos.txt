@@ -1,0 +1,36 @@
+
+=== Donchian + B + C: 162 kombinime, kosto 10 pike ===
+  Kombinime me totR > 0: IS 1%, OOS 37%
+  Top 5 sipas t-stat ne IS (OOS vetem per kontroll):
+ dc_len  sl_atr     rr  c_beta  max_hold  IS_trades  IS_PF  IS_totR  IS_t-stat  OOS_trades  OOS_PF  OOS_totR  OOS_t-stat  OOS_maxDD_R
+     10    1.50   1.50    0.80        32       1411   1.00     1.80       0.04         639    0.83    -58.79       -2.23        65.09
+     10    1.50   1.50    0.80        16       1416   0.99    -7.15      -0.19         640    0.83    -54.56       -2.21        61.29
+     20    1.50   1.50    0.80        32       1361   0.99   -10.11      -0.26         611    0.91    -26.69       -1.07        39.49
+     10    2.00   1.50    0.50        32       1401   0.98   -13.46      -0.32         633    0.86    -45.64       -1.72        58.86
+     20    1.50   3.00    0.80        32       1310   0.98   -19.79      -0.38         584    0.99     -3.96       -0.12        39.94
+
+=== Momentum + C: 162 kombinime, kosto 10 pike ===
+  Kombinime me totR > 0: IS 17%, OOS 7%
+  Top 5 sipas t-stat ne IS (OOS vetem per kontroll):
+ body_atr  sl_atr     rr  c_beta  max_hold  IS_trades  IS_PF  IS_totR  IS_t-stat  OOS_trades  OOS_PF  OOS_totR  OOS_t-stat  OOS_maxDD_R
+     0.50    1.50   1.50    0.80        16       1422   1.07    50.91       1.20         648    0.97    -11.51       -0.40        45.90
+     0.50    1.50   2.00    0.50        16       1422   1.06    52.17       1.08         648    0.93    -27.83       -0.88        52.54
+     0.50    1.50   1.50    0.50        16       1422   1.06    44.63       1.02         648    0.97     -9.86       -0.34        38.87
+     0.50    2.00   1.50    0.50        16       1422   1.06    39.67       0.98         648    1.03      8.58        0.32        32.22
+     0.50    1.50   2.00    0.80        16       1422   1.06    43.78       0.94         648    0.92    -31.24       -0.99        59.69
+
+=== Fade + A + B: 243 kombinime, kosto 10 pike ===
+  Kombinime me totR > 0: IS 29%, OOS 43%
+  Top 5 sipas t-stat ne IS (OOS vetem per kontroll):
+ a_min_z  sl_atr     rr  body_atr  max_hold  IS_trades  IS_PF  IS_totR  IS_t-stat  OOS_trades  OOS_PF  OOS_totR  OOS_t-stat  OOS_maxDD_R
+    2.00    2.00   1.50      0.80        16        348   1.23    29.91       1.69         110    0.79    -10.79       -1.09        20.73
+    2.00    2.00   2.00      0.80        16        345   1.22    31.83       1.57         108    0.76    -12.36       -1.19        20.00
+    2.00    2.00   1.50      0.50        16        412   1.17    26.99       1.41         130    0.87     -7.81       -0.72        19.28
+    2.00    1.50   2.00      0.80        16        351   1.17    25.81       1.26         112    0.83     -9.95       -0.86        21.72
+    2.00    2.00   1.50      0.30        16        453   1.14    24.17       1.21         151    0.80    -14.42       -1.24        21.32
+
+=== Zgjedhja me e mire ne IS per cdo familje -> rezultati OOS ===
+         familja  dc_len  sl_atr     rr  c_beta  max_hold  IS_PF   IS_t  OOS_trades  OOS_PF  OOS_totR  OOS_t  body_atr  a_min_z
+Donchian + B + C   10.00    1.50   1.50    0.80     32.00   1.00   0.04      639.00    0.83    -58.79  -2.23       NaN      NaN
+    Momentum + C     NaN    1.50   1.50    0.80     16.00   1.07   1.20      648.00    0.97    -11.51  -0.40      0.50      NaN
+    Fade + A + B     NaN    2.00   1.50     NaN     16.00   1.23   1.69      110.00    0.79    -10.79  -1.09      0.80     2.00

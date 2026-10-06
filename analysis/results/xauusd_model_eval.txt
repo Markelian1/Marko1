@@ -1,0 +1,27 @@
+==============================================================================
+MAPE out-of-sample e tick volume XAUUSD M15 (2022-09-26 .. 2026-09-30, 94768 bare)
+==============================================================================
+                modeli  MAPE mesatare  MAPE mediane     n
+           RKF dinamik          0.209         0.114 94768
+            KF dinamik          0.199         0.115 94768
+          RM statik 5d          0.415         0.185 94764
+         RM statik 10d          0.420         0.190 94768
+         RM statik 20d          0.436         0.199 94768
+         RM statik 40d          0.470         0.216 94768
+Naiv: bari i meparshem          0.244         0.145 93729
+          Naiv sezonal          0.209         0.123 93729
+
+  RKF dinamik vs RM me i mire (RM statik 5d): 49.7% permiresim (artikulli: 64%)
+  RKF dinamik vs naiv sezonal: 0.0%
+  RKF vs KF: -4.64%
+  Bare ku filtri robust preu outlier (z != 0): 1.7%
+
+  MAPE mesatare sipas vitit:
+    2022: RKF dinamik 0.224  RM statik 5d 0.479  Naiv sezonal 0.231
+    2023: RKF dinamik 0.221  RM statik 5d 0.425  Naiv sezonal 0.234
+    2024: RKF dinamik 0.272  RM statik 5d 0.569  Naiv sezonal 0.255
+    2025: RKF dinamik 0.220  RM statik 5d 0.430  Naiv sezonal 0.223
+    2026: RKF dinamik 0.086  RM statik 5d 0.151  Naiv sezonal 0.087
+
+  Inovacioni log(aktual/parashikim): mesatare -0.002, std 0.237, p5 -0.35, p95 +0.36
+  -> vellimi real > 1.5x parashikimit ne 3.9% te bareve, > 2x ne 0.8%
