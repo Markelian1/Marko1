@@ -1,5 +1,7 @@
-"""Cross-check mql5/Include/KalmanVolume.mqh against model/kalman_volume.py.
+"""Cross-check the CKalmanVolume class of the EA against model/kalman_volume.py.
 
+The class lives in mql5/Experts/KalmanVolumeXAU.mq5 between the
+"BEGIN KalmanVolume" / "END KalmanVolume" markers (the EA is a single file).
 MetaEditor is not available here, so the MQL5 class is compiled as C++: a small
 shim provides the MQL5 math/array functions and dynamic member arrays
 (`double m_x[];`) are rewritten to std::vector. Both implementations are run on
@@ -67,8 +69,19 @@ int main(int argc, char **argv) {
 """
 
 
+EA = ROOT / "mql5/Experts/KalmanVolumeXAU.mq5"
+
+
+def core_block():
+    """The CKalmanVolume class as embedded in the EA."""
+    src = EA.read_text()
+    start = src.index("//=== BEGIN KalmanVolume")
+    end = src.index("//=== END KalmanVolume ===")
+    return src[start:end]
+
+
 def mql_to_cpp(src):
-    """Rewrite the few MQL5-only constructs used by KalmanVolume.mqh."""
+    """Rewrite the few MQL5-only constructs used by the CKalmanVolume class."""
     out = []
     for line in src.splitlines():
         m = re.match(r"^(\s*)(double|bool|int)(\s+)(m_\w+\[\].*;)\s*$", line)
@@ -137,7 +150,7 @@ def main():
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        (tmp / "kv.cpp").write_text(mql_to_cpp((ROOT / "mql5/Include/KalmanVolume.mqh").read_text()))
+        (tmp / "kv.cpp").write_text(mql_to_cpp(core_block()))
         subprocess.run(["g++", "-O2", "-std=c++17", "-Wall", "-Wno-unused-variable", "-Wno-unused-result",
                         "-o", str(tmp / "kv"), str(tmp / "kv.cpp")], check=True)
         worst = 0.0

@@ -8,7 +8,7 @@ Approach" (SSRN 3101695). Log-volume of bin i on day t is modelled as
 with state x = [eta, mu]. eta only moves at day boundaries, mu is AR(1) per bin.
 Parameters are calibrated with the closed-form EM of Algorithm 3.
 
-This file mirrors mql5/Include/KalmanVolume.mqh line by line (same
+This file mirrors class CKalmanVolume in mql5/Experts/KalmanVolumeXAU.mq5 line by line (same
 initialisation, update order and convergence rule) so the two can be checked
 against each other numerically (see tests/).
 

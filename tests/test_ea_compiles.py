@@ -1,6 +1,6 @@
 """Syntax/type check of the EA without MetaEditor.
 
-mql5/Experts/KalmanVolumeXAU.mq5 (+ KalmanVolume.mqh) is rewritten into C++
+mql5/Experts/KalmanVolumeXAU.mq5 (single file, model class included) is rewritten into C++
 (input/group/property lines, dynamic local arrays, the #includes) and compiled
 with g++ -fsyntax-only against stub declarations of the MQL5 API it uses.
 This catches typos, wrong argument counts and type errors in the EA logic.
@@ -18,7 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_mql_core import SHIM, mql_to_cpp  # noqa: E402
+from test_mql_core import SHIM  # noqa: E402
 
 API = r"""
 #include <string>
@@ -95,7 +95,7 @@ long PositionGetInteger(ENUM_POSITION_PROPERTY_INTEGER);
 """
 
 
-def ea_to_cpp(src, core_cpp):
+def ea_to_cpp(src):
     out = []
     for line in src.splitlines():
         s = line.strip()
@@ -104,17 +104,15 @@ def ea_to_cpp(src, core_cpp):
         if s.startswith("#include"):
             continue
         line = re.sub(r"^input\s+", "const ", line)
-        m = re.match(r"^(\s*)(MqlRates|long|int|double)\s+(\w+)\[\];\s*$", line)
+        m = re.match(r"^(\s*)(MqlRates|long|int|double|bool)\s+(\w+\[\](,\s*\w+\[\])*);\s*$", line)
         if m:
-            line = f"{m.group(1)}std::vector<{m.group(2)}> {m.group(3)};"
+            line = f"{m.group(1)}std::vector<{m.group(2)}> {m.group(3).replace('[]', '')};"
         out.append(line)
-    return core_cpp + API + "\n".join(out) + "\n"
+    return SHIM + API + "\n".join(out) + "\n"
 
 
 def main():
-    core = mql_to_cpp((ROOT / "mql5/Include/KalmanVolume.mqh").read_text())
-    core = core[: core.index("int main(")]  # drop the core test driver
-    cpp = ea_to_cpp((ROOT / "mql5/Experts/KalmanVolumeXAU.mq5").read_text(), core)
+    cpp = ea_to_cpp((ROOT / "mql5/Experts/KalmanVolumeXAU.mq5").read_text())
     with tempfile.TemporaryDirectory() as tmp:
         f = Path(tmp) / "ea.cpp"
         f.write_text(cpp)

@@ -4,17 +4,14 @@ EA për **XAUUSD** i ndërtuar mbi parashikimin e vëllimit me filtër Kalman (C
 
 > ⚠️ **Lexo [`analysis/XAUUSD_ANALIZA.md`](../analysis/XAUUSD_ANALIZA.md) para përdorimit.** Në 4 vjet të dhëna XAUUSD M15 asnjë kombinim nuk doli fitimprurës në mënyrë të qëndrueshme pas kostove. Përdore vetëm në Strategy Tester ose në demo.
 
-## Skedarët
+## Skedari
 
-| Skedari | Ku vendoset në MT5 |
-|---|---|
-| `Include/KalmanVolume.mqh` | `MQL5/Include/KalmanVolume.mqh` |
-| `Experts/KalmanVolumeXAU.mq5` | `MQL5/Experts/KalmanVolumeXAU.mq5` |
+EA-ja është **një skedar i vetëm**: `Experts/KalmanVolumeXAU.mq5`. Klasa e modelit (`CKalmanVolume`) është brenda tij, kështu që nuk duhet asnjë skedar `.mqh` shtesë.
 
 ## Instalimi
 
 1. Në MT5: **File → Open Data Folder**.
-2. Kopjo dy skedarët në dosjet e tabelës më sipër.
+2. Kopjo `KalmanVolumeXAU.mq5` në `MQL5/Experts/`.
 3. Hap `KalmanVolumeXAU.mq5` në MetaEditor dhe shtyp **F7** (Compile). Duhet të dalë "0 errors".
 4. Hap grafikun **XAUUSD M15** dhe tërhiq EA-në mbi të.
 5. Në tab-in "Common", aktivizo "Allow Algo Trading".
@@ -48,7 +45,7 @@ Pastaj, me çdo bar të mbyllur, filtri Kalman përditëson:
 - **μ:** dinamika brenda ditës;
 - **parashikimin** e bar-eve të ardhshme.
 
-Bërthama (`KalmanVolume.mqh`) është testuar kundrejt implementimit Python. Përputhen deri në 2·10⁻¹⁶ (`tests/test_mql_core.py`).
+Klasa e modelit (`CKalmanVolume`, brenda EA-së) është testuar kundrejt implementimit Python. Përputhen deri në 2·10⁻¹⁶ (`tests/test_mql_core.py`).
 
 ### Hyrja bazë (`InpTrigger`)
 
