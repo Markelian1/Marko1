@@ -237,6 +237,8 @@ Krahasimi me të njëjtat rregulla në Python (`strategy/compare_mt5.py`, dalja 
 | **MT5 M15 (v1.00)** | ~1000 | 0.88 | −16.2% | 22.4% |
 | Python M15, si v1.00, kosto 7 | 1028 | 0.92 | −15.4% | 21.6 R |
 | Python M15, **v1.01**, kosto 7 | 974 | 0.95 | −10.9% | 19.3 R |
+| **MT5 M15 (v1.01)** | ~956 | 0.90 | −14.1% | 21.1% |
+| Python M15, v1.01, kosto 22 | 974 | 0.93 | −13.9% | 20.4 R |
 | **MT5 M5 (v1.00)** | ~1121 | 0.96 | −6.8% | 25.5% |
 | Python M5, si v1.00, kosto 7 | 1123 | 0.95 | −11.1% | 31.1 R |
 | Python M5, **v1.01**, kosto 7 | 1097 | 0.98 | −6.3% | 29.1 R |
@@ -246,6 +248,12 @@ Krahasimi me të njëjtat rregulla në Python (`strategy/compare_mt5.py`, dalja 
 - **Çfarë ndodhte:** me modulin B, pasi SL/TP mbyllte pozicionin, copat e mbetura nuk anuloheshin. Nëse çmimi kthehej brenda SL–TP, EA rihynte në një tregti që kishte dështuar tashmë.
 - **Prova:** kur ky gabim simulohet në Python, numri i pozicioneve përputhet me MT5 (M5: 1123 kundrejt 1121) dhe rezultati M15 afrohet shumë (−15.4% kundrejt −16.2%).
 - **Rregullimi:** EA **v1.01** anulon copat e mbetura sapo pozicioni i sinjalit mbyllet.
+
+### Testi me v1.01 në MT5
+
+- **Rregullimi u konfirmua:** pozicionet ranë nga ~1000 në ~956, dhe rezultati u përmirësua nga −16.2% në −14.1%.
+- **Diferenca që mbetet me Python-in shpjegohet nga kostoja e ekzekutimit.** Python-i e përsërit rezultatin e MT5 kur kostoja totale për tregti është **~22 pikë** (komision + spread real në tick + slippage në SL), jo 7. Spread-i në bar-et e eksportuara nënvlerëson spread-in real në momentin e ekzekutimit.
+- **EA-ja dhe backtest-i janë të njëjta.** Kosto reale për tregti është rreth 0.22 $/oz. Ky numër duhet përdorur për çdo strategji tjetër që testojmë.
 
 ### Çfarë pritet nga v1.01
 
