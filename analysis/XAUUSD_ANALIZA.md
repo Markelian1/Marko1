@@ -214,3 +214,40 @@ Për tre familjet më premtuese, 162–243 kombinime parametrash u zgjodhën sip
 - **Test në MT5:** testo EA-në me broker-in tënd. Krahaso numrin e tregtive dhe PF me tabelën e seksionit 4. Duhet të jenë afër për Donchian + B + C.
 - **Sinjal më i mirë hyrjeje:** zëvendëso sinjalin bazë me një hyrje që ka avantazh të provuar, dhe mbaj B + C si menaxhim rreziku.
 - **Volatilitet, jo drejtim:** përdor modelin si filtër volatiliteti, p.sh. mos tregto në bar-e me vëllim të pritshëm shumë të ulët. Kjo kërkon testin e vet.
+
+## 7. Testi në MT5 Strategy Tester: EA-ja = backtest-i Python
+
+### Testi
+
+| Fusha | Vlera |
+|---|---|
+| Llogaria | FP Markets demo, hedge |
+| Simboli / timeframe | XAUUSD **M5** |
+| Periudha | 01.01.2026 – 01.10.2026 |
+| Modelimi | Real ticks |
+| Kapitali | 10,000 USD |
+| Parametrat | Default |
+
+Krahasimi me të njëjtat rregulla në Python (`strategy/compare_mt5_m5.py`, dalja në `results/mt5_vs_python_m5_2026.txt`):
+
+| | Pozicione (deals) | PF | Equity në fund | Max DD |
+|---|---|---|---|---|
+| **MT5 Strategy Tester** | ~1121 | 0.96 | −6.8% | 25.5% |
+| Python, kosto 0 | 1097 | 1.00 | −3.1% | 27 R |
+| Python, kosto 7 pikë | 1097 | 0.98 | −6.3% | 29 R |
+
+### Çfarë tregon
+
+- **EA-ja bën atë që u testua në Python.** Numri i pozicioneve ndryshon me 2%, dhe rezultati përputhet me versionin me ~7 pikë kosto, që ka shumë gjasë është komisioni i llogarisë.
+- **Rezultati negativ nuk është gabim në kod,** por mungesë avantazhi e sinjalit të hyrjes, siç parashikoi analiza.
+- **Z-score −20 në MT5** vjen nga moduli B: çdo sinjal hap ~3 pozicione që mbyllen bashkë me të njëjtin rezultat. Nuk është problem.
+
+### Modulet në të njëjtën periudhë M5
+
+| Modulet | Total R | Max DD |
+|---|---|---|
+| Baza pa module | −18.9 | 44 R |
+| + C | −7.9 | 37 R |
+| + B + C | −0.7 | 27 R |
+
+Edhe këtu modulet i ulin humbjet, por nuk krijojnë fitim.

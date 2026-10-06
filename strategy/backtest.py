@@ -126,7 +126,8 @@ def run(d, cfg):
                     filled = sum(w for w, _ in pos["fills"])
                     pnl = sum(w * dr * (exit_px - e) for w, e in pos["fills"]) - cost * filled
                     trades.append({"dt": d.dt.iat[pos["bar"]], "dir": dr, "R": pnl / pos["risk"],
-                                   "filled": filled, "reason": reason, "bars": j - pos["bar"],
+                                   "filled": filled, "n_fills": len(pos["fills"]),
+                                   "reason": reason, "bars": j - pos["bar"],
                                    "risk_pts": pos["risk"] / POINT})
                     pos = None
             elif not pos["pending"]:

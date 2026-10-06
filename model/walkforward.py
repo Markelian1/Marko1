@@ -78,6 +78,7 @@ def main():
     ap.add_argument("--horizon", type=int, default=8)
     ap.add_argument("--warm-iters", type=int, default=5)
     ap.add_argument("--cold-iters", type=int, default=30)
+    ap.add_argument("--from-date", default=None, help="only output days >= YYYY-MM-DD")
     a = ap.parse_args()
 
     df = load_mt5(a.src)
@@ -88,7 +89,10 @@ def main():
     m = KalmanVolume(I, robust_k=a.robust_k)
     out = []
     t0 = time.time()
-    for k in range(a.train_days, len(days)):
+    k0 = a.train_days
+    if a.from_date:
+        k0 = max(k0, int(np.searchsorted(days.values, np.datetime64(a.from_date))))
+    for k in range(k0, len(days)):
         y = Y[k - a.train_days:k].ravel()
         o = OBS[k - a.train_days:k].ravel()
         its = m.fit(y, o, max_iter=a.warm_iters if m.fitted else a.cold_iters,
@@ -105,7 +109,7 @@ def main():
             out.append((ROWS[k, b], days[k], b, f_prior, e if observed else np.nan, S, z,
                         m.day_activity(), *fh, fsum / a.horizon, its,
                         p["a_eta"], p["a_mu"], p["s_eta2"], p["s_mu2"], p["r"]))
-        if (k - a.train_days) % 50 == 0:
+        if (k - k0) % 50 == 0:
             el = time.time() - t0
             print(f"day {k}/{len(days)} {days[k].date()} iters={its} "
                   f"a_eta={p['a_eta']:.3f} a_mu={p['a_mu']:.3f} r={p['r']:.4f} "
