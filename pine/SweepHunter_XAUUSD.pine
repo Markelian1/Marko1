@@ -7,6 +7,7 @@
 //   sweep of the high -> SELL at that close, SL at the sweep high.
 // One signal per side per day. Each trade is followed until TP, SL or
 // "trackH" hours; SL is assumed first when both are hit in one bar.
+// "slBuf" moves the SL further than the sweep extreme (% of price).
 // Server hours are MT5 server time (New York + 7h). Results ignore the
 // spread. Use a 1m or 5m chart.
 //@version=5
@@ -20,11 +21,14 @@ grpS    = "Sinjali"
 minAge  = input.int(60, "Niveli duhet të ketë qëndruar (minuta)", minval=1, group=grpS)
 reclaim = input.int(15, "Çmimi kthehet brenda për (minuta)", minval=1, group=grpS)
 minStop = input.float(0.10, "Kalo stop-et nën këtë % të çmimit", minval=0.0, step=0.01, group=grpS)
+slBuf   = input.float(0.0, "SL më larg se sweep-i (% e çmimit)", minval=0.0, step=0.01, group=grpS)
 grpE    = "Dalja"
 tpMode  = input.string("R", "TP", options=["R", "Ana tjetër e ditës", "Dita e kaluar"], group=grpE)
 tpR     = input.float(3.0, "TP në R (kur TP = R)", minval=0.5, step=0.5, group=grpE)
 trackH  = input.int(24, "Mbyll pas (orë)", minval=1, group=grpE)
 showBox = input.bool(true, "Vizato trade-t", group=grpE)
+showLvl = input.bool(false, "Shfaq minimumin / maksimumin e ditës", group=grpE)
+riskPct = input.float(0.5, "Rreziku për trade (%) për tabelën", minval=0.1, step=0.1, group=grpE)
 
 // ===== Types =====
 type Side
@@ -101,7 +105,8 @@ f_process(Side s, bool inWindow) =>
         s.levelT := time
     [fire, slv]
 
-f_open(array<Trade> trades, Stats st, int dir, float sl, float otherSide, float pdH, float pdL) =>
+f_open(array<Trade> trades, Stats st, int dir, float sweepExt, float otherSide, float pdH, float pdL) =>
+    float sl   = sweepExt - dir * close * slBuf / 100
     float risk = dir == 1 ? close - sl : sl - close
     if risk > 0 and risk / close * 100 >= minStop
         float tp = tpMode == "R" ? close + dir * tpR * risk : tpMode == "Ana tjetër e ditës" ? otherSide : (dir == 1 ? pdH : pdL)
@@ -146,7 +151,8 @@ if array.size(trades) > 0
                     st.tp := st.tp + 1
                 else
                     st.out := st.out + 1
-                label.new(bar_index, t.dir == 1 ? high : low, (res > 0 ? "+" : "") + str.tostring(res, "0.0") + "R", style=label.style_none, textcolor=res > 0 ? color.teal : color.red, size=size.small)
+                float exitPx = slHit ? t.sl : tpHit ? t.tp : close
+                label.new(bar_index, exitPx, (res > 0 ? "✔ +" : "✖ ") + str.tostring(res, "0.0") + "R", style=label.style_label_left, color=res > 0 ? color.new(color.green, 0) : color.new(color.red, 0), textcolor=color.white, size=size.normal)
                 array.remove(trades, i)
 
 // ===== 2) day levels and new signals =====
@@ -163,11 +169,11 @@ else
     if fireS
         f_open(trades, st, -1, slS, dayLow, pdH, pdL)
 
-plot(sLo.level, "Minimumi i ditës", color=color.new(color.teal, 40), style=plot.style_linebr)
-plot(sHi.level, "Maksimumi i ditës", color=color.new(color.red, 40), style=plot.style_linebr)
+plot(showLvl ? sLo.level : na, "Minimumi i ditës", color=color.new(color.teal, 50), style=plot.style_linebr)
+plot(showLvl ? sHi.level : na, "Maksimumi i ditës", color=color.new(color.red, 50), style=plot.style_linebr)
 
 // ===== Results table =====
-var table tb = table.new(position.top_right, 2, 8, bgcolor=color.new(color.black, 15), border_width=1)
+var table tb = table.new(position.top_right, 2, 9, bgcolor=color.rgb(20, 20, 20), border_width=1)
 if barstate.islast
     int closed = st.tp + st.sl + st.out
     table.cell(tb, 0, 0, "Sweep Hunter", text_color=color.white)
@@ -175,14 +181,16 @@ if barstate.islast
     table.cell(tb, 0, 1, "Sinjale", text_color=color.white)
     table.cell(tb, 1, 1, str.tostring(st.n), text_color=color.white)
     table.cell(tb, 0, 2, "Arritën TP", text_color=color.white)
-    table.cell(tb, 1, 2, str.tostring(st.tp), text_color=color.teal)
+    table.cell(tb, 1, 2, str.tostring(st.tp), text_color=color.lime)
     table.cell(tb, 0, 3, "Preknë SL", text_color=color.white)
-    table.cell(tb, 1, 3, str.tostring(st.sl), text_color=color.red)
+    table.cell(tb, 1, 3, str.tostring(st.sl), text_color=color.rgb(255, 90, 90))
     table.cell(tb, 0, 4, "Mbyllur nga koha", text_color=color.white)
     table.cell(tb, 1, 4, str.tostring(st.out), text_color=color.white)
     table.cell(tb, 0, 5, "Fitojnë", text_color=color.white)
     table.cell(tb, 1, 5, closed > 0 ? str.tostring(100.0 * st.win / closed, "0") + "%" : "-", text_color=color.white)
     table.cell(tb, 0, 6, "Gjithsej R", text_color=color.white)
-    table.cell(tb, 1, 6, (st.sumR > 0 ? "+" : "") + str.tostring(st.sumR, "0.0"), text_color=st.sumR >= 0 ? color.teal : color.red)
+    table.cell(tb, 1, 6, (st.sumR > 0 ? "+" : "") + str.tostring(st.sumR, "0.0"), text_color=st.sumR >= 0 ? color.lime : color.rgb(255, 90, 90))
     table.cell(tb, 0, 7, "Mesatarja R / trade", text_color=color.white)
     table.cell(tb, 1, 7, closed > 0 ? str.tostring(st.sumR / closed, "0.00") : "-", text_color=color.white)
+    table.cell(tb, 0, 8, "Llogaria me " + str.tostring(riskPct, "0.0#") + "% rrezik", text_color=color.white)
+    table.cell(tb, 1, 8, (st.sumR > 0 ? "+" : "") + str.tostring(st.sumR * riskPct, "0.0") + "%", text_color=st.sumR >= 0 ? color.lime : color.rgb(255, 90, 90))

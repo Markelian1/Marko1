@@ -9,7 +9,9 @@
 //|   inside within InpReclaimMinutes:                               |
 //|     sweep of the low  -> LONG at that close, SL at the sweep low |
 //|     sweep of the high -> SHORT at that close, SL at the sweep high|
-//|   One signal per side per day. Each signal is then followed for  |
+//|   One signal per side per day, recorded three times: SL at the   |
+//|   sweep extreme, and 0.05% / 0.10% of price further (sl_buf).    |
+//|   Each signal is then followed for                               |
 //|   InpTrackHours hours: the best move in R before the stop        |
 //|   (mfe_R), whether and when the stop was hit, and the R at the   |
 //|   end. Any target (3R, 5R, 8R, the other side of the day's       |
@@ -22,7 +24,7 @@
 //|   Run it in the Strategy Tester, "1 minute OHLC" is enough.      |
 //+------------------------------------------------------------------+
 #property copyright "Roboquant AI"
-#property version   "1.00"
+#property version   "1.10"
 #property strict
 
 input int    InpDayStartHour    = 1;     // Day levels are built from this server hour
@@ -53,6 +55,7 @@ struct SweepSignal
    datetime endTime;
    int      dir;
    int      levelAge;
+   double   buf;          // extra SL distance, % of price
    double   entry;
    double   sl;
    double   risk;
@@ -93,7 +96,7 @@ void WriteSignal(SweepSignal &g)
 {
    FileWrite(g_file,
              TimeToString(g.t0, TIME_DATE), TimeToString(g.t0, TIME_MINUTES),
-             (g.dir == 1 ? "LONG" : "SHORT"), IntegerToString(g.levelAge),
+             (g.dir == 1 ? "LONG" : "SHORT"), IntegerToString(g.levelAge), DoubleToString(g.buf, 2),
              Px(g.entry), Px(g.risk), Px(g.spread),
              Num(g.dayR), Num(g.pdR), Num(g.mfe),
              (g.slHit ? "1" : "0"), IntegerToString(g.slMin), Num(g.endR));
@@ -101,7 +104,7 @@ void WriteSignal(SweepSignal &g)
    g.active = false;
 }
 
-void OpenSignal(const Side &s, const MqlRates &r, const double sl, const double otherSide)
+void OpenVariant(const Side &s, const MqlRates &r, const double sl, const double buf, const double otherSide)
 {
    double risk = (s.dir == 1) ? r.close - sl : sl - r.close;
    if(risk <= 0.0) return;
@@ -118,6 +121,7 @@ void OpenSignal(const Side &s, const MqlRates &r, const double sl, const double 
    g_sig[k].endTime  = r.time + InpTrackHours * 3600;
    g_sig[k].dir      = s.dir;
    g_sig[k].levelAge = s.brokenAge;
+   g_sig[k].buf      = buf;
    g_sig[k].entry    = r.close;
    g_sig[k].sl       = sl;
    g_sig[k].risk     = risk;
@@ -128,6 +132,13 @@ void OpenSignal(const Side &s, const MqlRates &r, const double sl, const double 
    g_sig[k].slHit    = false;
    g_sig[k].slMin    = 0;
    g_sig[k].endR     = 0.0;
+}
+
+void OpenSignal(const Side &s, const MqlRates &r, const double sweepExt, const double otherSide)
+{
+   double bufs[] = {0.0, 0.05, 0.10};
+   for(int b = 0; b < ArraySize(bufs); b++)
+      OpenVariant(s, r, sweepExt - s.dir * r.close * bufs[b] / 100.0, bufs[b], otherSide);
 }
 
 //--- Follow one open signal by one closed M1 bar
@@ -211,7 +222,7 @@ int OnInit()
       PrintFormat("Could not open %s (error %d)", name, GetLastError());
       return INIT_FAILED;
    }
-   FileWrite(g_file, "date", "time", "dir", "level_age", "entry", "risk", "spread",
+   FileWrite(g_file, "date", "time", "dir", "level_age", "sl_buf", "entry", "risk", "spread",
              "day_R", "pd_R", "mfe_R", "sl_hit", "sl_min", "end_R");
 
    ArrayResize(g_sig, 0);

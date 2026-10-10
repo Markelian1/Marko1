@@ -3,7 +3,8 @@
 Usage: python3 analyze_sweep.py <SWEEP_signals.csv>
 
 Each signal is a sweep of the day's low (LONG) or high (SHORT) that was
-reclaimed. mfe_R is the best move before the stop, so a target of k R
+reclaimed, recorded once per SL distance (sl_buf: extra % of price beyond
+the sweep extreme). mfe_R is the best move before the stop, so a target of k R
 was reached when mfe_R >= k; otherwise the trade lost 1R if the stop was
 hit, or ended at end_R. One spread is deducted per trade. A target must
 work in 2020-21 and in 2022-26 to count.
@@ -45,7 +46,9 @@ def main(path: str) -> None:
     print(d.groupby("dir").size().to_string())
     print("\nrisk as % of price:", d.risk_pct.describe().round(3).to_dict())
 
-    for label, sub in (("all signals", d), ("stop >= 0.10% of price", d[d.risk_pct >= 0.10])):
+    groups = [(f"SL +{b:.2f}%, all signals", d[d.sl_buf == b]) for b in sorted(d.sl_buf.unique())]
+    groups += [(f"SL +{b:.2f}%, stop >= 0.10% of price", d[(d.sl_buf == b) & (d.risk_pct >= 0.10)]) for b in sorted(d.sl_buf.unique())]
+    for label, sub in groups:
         rows = {}
         for k in (1, 2, 3, 5, 8):
             rows[f"{k}R"] = stats(result(sub, pd.Series(float(k), index=sub.index)), sub.period)
@@ -56,13 +59,14 @@ def main(path: str) -> None:
         print(f"\n== {label}: result per target ==")
         print(pd.DataFrame(rows).T.to_string())
 
-    sub = d[d.risk_pct >= 0.10]
+    sub = d[(d.sl_buf == 0) & (d.risk_pct >= 0.10)]
     r3 = result(sub, pd.Series(3.0, index=sub.index))
     print("\n== stop >= 0.10%, target 3R, by hour (server) ==")
     print(pd.DataFrame({h: stats(r3[sub.hour == h], sub.period[sub.hour == h]) for h in sorted(sub.hour.unique())}).T.to_string())
     print("\n== by direction, target 3R ==")
     print(pd.DataFrame({k: stats(r3[sub.dir == k], sub.period[sub.dir == k]) for k in ("LONG", "SHORT")}).T.to_string())
-    print("\nreached 8R before the stop:", int((d.mfe_R >= 8).sum()), "of", len(d))
+    base = d[d.sl_buf == 0]
+    print("\nreached 8R before the stop (SL at the sweep):", int((base.mfe_R >= 8).sum()), "of", len(base))
 
 
 if __name__ == "__main__":
