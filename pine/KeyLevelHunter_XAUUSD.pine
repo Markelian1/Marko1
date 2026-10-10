@@ -12,7 +12,8 @@
 // liquidity) at least minRR away, or a fixed R. A zone is removed when it
 // is broken (close beyond it) or used for a trade. One open trade per
 // direction. Optional trend filter: only trades in the direction of the
-// 1H EMA (previous closed 1H bar) or of the last break of structure. SL is assumed first when SL and TP are hit in one bar.
+// 1H EMA (previous closed 1H bar) or of the last break of structure.
+// SL is assumed first when SL and TP are hit in one bar.
 // Server hours are MT5 server time (New York + 7h). Results ignore the
 // spread. Use a 5m chart.
 //@version=5
