@@ -1,6 +1,6 @@
-// Reverse Hunter v2.2 XAUUSD, ASIA ONLY -- TradingView STRATEGY version of
-// XAUUSD_ReverseHunter_Asia_v22.mq5 (the v2.2 robot with only the Asia
-// session, 03:00 MT5 server time), with TradingView's Strategy Tester report.
+// Reverse Hunter v2.3 XAUUSD, ASIA ONLY -- TradingView STRATEGY version of
+// XAUUSD_ReverseHunter_Asia_v23.mq5 (Asia session at 03:00 MT5 server time,
+// 40-minute range, target 1.5 x width), with the Strategy Tester report.
 //
 // The session (MT5 server time = New York + 7h):
 //   range     = high / low of the first rangeMin minutes after the start,
@@ -13,7 +13,7 @@
 // Size: riskPct % of equity per trade (units = ounces), capped at maxUnits.
 // Commission 0.1 per ounce per side stands in for the spread.
 //@version=5
-strategy("Reverse Hunter Azia XAUUSD (strategji)", shorttitle="RH Azia", overlay=true,
+strategy("Reverse Hunter Azia v2.3 XAUUSD (strategji)", shorttitle="RH Azia", overlay=true,
      initial_capital=100000, currency=currency.USD, default_qty_type=strategy.fixed, default_qty_value=1,
      commission_type=strategy.commission.cash_per_contract, commission_value=0.1,
      pyramiding=0, max_boxes_count=500, max_labels_count=500)
@@ -24,11 +24,11 @@ asHour   = input.int(3, "Azia: ora", minval=0, maxval=23, inline="as", group=grp
 asMin    = input.int(0, "min", minval=0, maxval=59, inline="as", group=grpS)
 
 grpR     = "Rregullat (si në robot)"
-rangeMin = input.int(30, "Range (minuta)", minval=5, group=grpR)
+rangeMin = input.int(40, "Range (minuta)", minval=5, group=grpR)
 boWin    = input.int(90, "Thyerja lejohet deri në (minuta pas range-it)", minval=5, group=grpR)
 rvWin    = input.int(180, "Kthimi lejohet deri në (minuta pas range-it)", minval=5, group=grpR)
 holdMin  = input.int(360, "Mbyll pas (minuta pas range-it)", minval=10, group=grpR)
-rr       = input.float(2.0, "TP (x gjerësia e range-it)", minval=0.5, step=0.5, group=grpR)
+rr       = input.float(1.5, "TP (x gjerësia e range-it)", minval=0.5, step=0.5, group=grpR)
 minStop  = input.float(0.10, "Kalo stop-et nën këtë % të çmimit", minval=0.0, step=0.01, group=grpR)
 
 grpK     = "Rreziku"
@@ -122,7 +122,7 @@ if barstate.islast
         for i = 0 to nTr - 1
             wins += strategy.closedtrades.profit(i) > 0 ? 1 : 0
     float cap = strategy.initial_capital
-    table.cell(tb, 0, 0, "Reverse Hunter Azia", text_color=color.white)
+    table.cell(tb, 0, 0, "Reverse Hunter Azia v2.3", text_color=color.white)
     table.cell(tb, 1, 0, timeframe.in_seconds() > 300 ? "Përdor 1m ose 5m!" : "", text_color=color.orange)
     table.cell(tb, 0, 1, "Trade", text_color=color.white)
     table.cell(tb, 1, 1, str.tostring(nTr), text_color=color.white)
@@ -134,5 +134,5 @@ if barstate.islast
     table.cell(tb, 1, 4, str.tostring(strategy.max_drawdown, "#,##0") + " $", text_color=color.white)
     table.cell(tb, 0, 5, "Rreziku për trade", text_color=color.white)
     table.cell(tb, 1, 5, str.tostring(riskPct, "0.0#") + "%", text_color=color.white)
-    table.cell(tb, 0, 6, "Testi MT5 2020-2026", text_color=color.gray)
-    table.cell(tb, 1, 6, "+63%, 497 trade", text_color=color.gray)
+    table.cell(tb, 0, 6, "Skaneri 2020-2026", text_color=color.gray)
+    table.cell(tb, 1, 6, "+62%, 55% fitojnë", text_color=color.gray)
