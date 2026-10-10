@@ -1,0 +1,197 @@
+// Reverse Hunter v2.2 XAUUSD -- TradingView view of the MT5 robot
+// XAUUSD_MultiSession_ReverseHunter_v22.mq5 (tested 2020-2026: +150R).
+//
+// Each session (MT5 server time = New York + 7h):
+//   range     = high / low of the first rangeMin minutes after the start,
+//   breakout  = first bar close beyond the range within boWin minutes,
+//               followed virtually (SL at the far side, TP rr x width),
+//   reversal  = when that breakout is stopped out within rvWin minutes,
+//               enter the other way at the stop level: SL at the far side
+//               of the range, TP rr x width beyond the range,
+//   flatten   = holdMin minutes after the range.
+// Stops under minStop % of price are skipped. SL is assumed first when
+// SL and TP are hit in one bar. Results ignore the spread. Use 1m or 5m.
+//@version=5
+indicator("Reverse Hunter v2.2 XAUUSD", shorttitle="RH v2.2", overlay=true, max_boxes_count=500, max_labels_count=500)
+
+// ===== Inputs =====
+grpS     = "Seancat (ora e serverit MT5 = New York + 7)"
+nyOn     = input.bool(true, "New York", inline="ny", group=grpS)
+nyHour   = input.int(16, "ora", minval=0, maxval=23, inline="ny", group=grpS)
+nyMin    = input.int(30, "min", minval=0, maxval=59, inline="ny", group=grpS)
+asOn     = input.bool(true, "Azia", inline="as", group=grpS)
+asHour   = input.int(3, "ora", minval=0, maxval=23, inline="as", group=grpS)
+asMin    = input.int(0, "min", minval=0, maxval=59, inline="as", group=grpS)
+
+grpR     = "Rregullat (si në robot)"
+rangeMin = input.int(30, "Range (minuta)", minval=5, group=grpR)
+boWin    = input.int(90, "Thyerja lejohet deri në (minuta pas range-it)", minval=5, group=grpR)
+rvWin    = input.int(180, "Kthimi lejohet deri në (minuta pas range-it)", minval=5, group=grpR)
+holdMin  = input.int(360, "Mbyll pas (minuta pas range-it)", minval=10, group=grpR)
+rr       = input.float(2.0, "TP (x gjerësia e range-it)", minval=0.5, step=0.5, group=grpR)
+minStop  = input.float(0.10, "Kalo stop-et nën këtë % të çmimit", minval=0.0, step=0.01, group=grpR)
+
+grpV     = "Pamja"
+showRange = input.bool(true, "Vizato range-in", group=grpV)
+showBox  = input.bool(true, "Vizato trade-t", group=grpV)
+riskPct  = input.float(0.5, "Rreziku për trade (%) për tabelën", minval=0.1, step=0.1, group=grpV)
+
+// ===== Types =====
+type Sess
+    string name
+    int    startMin
+    bool   on
+    int    state = 0     // 1 range, 2 wait breakout, 3 breakout (virtual), 4 reversal open, 5 done
+    float  hi
+    float  lo
+    int    bar0
+    int    vDir
+    float  vSL
+    float  vTP
+    int    dir
+    float  entry
+    float  sl
+    float  tp
+    float  risk
+    int    eBar
+    box    pBox
+    box    rBox
+    int    n = 0
+    float  sumR = 0.0
+
+type Stats
+    int   n    = 0
+    int   tp   = 0
+    int   sl   = 0
+    int   out  = 0
+    int   win  = 0
+    float sumR = 0.0
+
+// ===== Functions =====
+f_close(Sess s, Stats st, float px, string how) =>
+    float res = s.dir * (px - s.entry) / s.risk
+    st.sumR := st.sumR + res
+    s.sumR  := s.sumR + res
+    st.win  := st.win + (res > 0 ? 1 : 0)
+    if how == "TP"
+        st.tp := st.tp + 1
+    else if how == "SL"
+        st.sl := st.sl + 1
+    else
+        st.out := st.out + 1
+    if showBox
+        box.set_right(s.pBox, bar_index)
+        box.set_right(s.rBox, bar_index)
+    string mark = how == "KOHA" ? "⏱ " : res > 0 ? "✔ " : "✖ "
+    label.new(bar_index, px, mark + (res > 0 ? "+" : "") + str.tostring(res, "0.0") + "R", style=label.style_label_left, color=res > 0 ? color.green : color.red, textcolor=color.white, size=size.normal)
+    s.state := 5
+    true
+
+// Advance one session by one bar
+f_step(Sess s, Stats st, int srvMin) =>
+    int  rEnd    = s.startMin + rangeMin
+    bool inRange = srvMin >= s.startMin and srvMin < rEnd
+    // flatten time, or a session left open over a market close
+    if s.state == 4 and (srvMin < s.startMin or srvMin >= rEnd + holdMin)
+        f_close(s, st, open, "KOHA")
+    if inRange
+        if s.state != 1
+            s.state := 1
+            s.hi    := high
+            s.lo    := low
+            s.bar0  := bar_index
+        else
+            s.hi := math.max(s.hi, high)
+            s.lo := math.min(s.lo, low)
+    else if srvMin >= rEnd and srvMin < rEnd + holdMin
+        int   e = srvMin - rEnd
+        float w = s.hi - s.lo
+        if s.state == 1
+            s.state := 2
+            if showRange
+                box.new(s.bar0, s.hi, bar_index - 1, s.lo, border_color=color.new(color.gray, 40), bgcolor=color.new(color.gray, 85))
+                label.new(s.bar0, s.hi, s.name, style=label.style_label_down, color=color.new(color.gray, 30), textcolor=color.white, size=size.small)
+        if s.state == 2
+            if e >= boWin or w <= 0
+                s.state := 5
+            else if close > s.hi
+                s.vDir  := 1
+                s.vSL   := s.lo
+                s.vTP   := s.hi + rr * w
+                s.state := 3
+            else if close < s.lo
+                s.vDir  := -1
+                s.vSL   := s.hi
+                s.vTP   := s.lo - rr * w
+                s.state := 3
+        else if s.state == 3
+            bool stopped = s.vDir == 1 ? low <= s.vSL : high >= s.vSL
+            bool target  = s.vDir == 1 ? high >= s.vTP : low <= s.vTP
+            if stopped
+                if s.on and e < rvWin and w / s.vSL * 100 >= minStop
+                    s.dir   := -s.vDir
+                    s.entry := s.vSL
+                    s.sl    := s.dir == 1 ? s.lo : s.hi
+                    s.tp    := s.dir == 1 ? s.hi + rr * w : s.lo - rr * w
+                    s.risk  := math.abs(s.entry - s.sl)
+                    s.eBar  := bar_index
+                    s.state := 4
+                    s.n     := s.n + 1
+                    st.n    := st.n + 1
+                    if showBox
+                        s.pBox := box.new(bar_index, math.max(s.entry, s.tp), bar_index + 1, math.min(s.entry, s.tp), border_color=color.new(color.teal, 60), bgcolor=color.new(color.teal, 80))
+                        s.rBox := box.new(bar_index, math.max(s.entry, s.sl), bar_index + 1, math.min(s.entry, s.sl), border_color=color.new(color.red, 60), bgcolor=color.new(color.red, 80))
+                    label.new(bar_index, s.dir == 1 ? low : high, (s.dir == 1 ? "BUY " : "SELL ") + s.name, style=s.dir == 1 ? label.style_label_up : label.style_label_down, color=s.dir == 1 ? color.teal : color.red, textcolor=color.white, size=size.small)
+                else
+                    s.state := 5
+            else if target
+                s.state := 5
+        else if s.state == 4 and bar_index > s.eBar
+            bool slHit = s.dir == 1 ? low <= s.sl : high >= s.sl
+            bool tpHit = s.dir == 1 ? high >= s.tp : low <= s.tp
+            if slHit
+                f_close(s, st, s.sl, "SL")
+            else if tpHit
+                f_close(s, st, s.tp, "TP")
+            else if showBox
+                box.set_right(s.pBox, bar_index)
+                box.set_right(s.rBox, bar_index)
+    true
+
+// ===== State =====
+var Sess  ny = Sess.new("NY", nyHour * 60 + nyMin, nyOn)
+var Sess  asia = Sess.new("Azia", asHour * 60 + asMin, asOn)
+var Stats st = Stats.new()
+
+int srvMin = ((hour(time, "America/New_York") + 7) % 24) * 60 + minute(time, "America/New_York")
+if nyOn
+    f_step(ny, st, srvMin)
+if asOn
+    f_step(asia, st, srvMin)
+
+// ===== Results table =====
+var table tb = table.new(position.top_right, 2, 11, bgcolor=color.rgb(20, 20, 20), border_width=1)
+if barstate.islast
+    int closed = st.tp + st.sl + st.out
+    table.cell(tb, 0, 0, "Reverse Hunter v2.2", text_color=color.white)
+    table.cell(tb, 1, 0, timeframe.in_seconds() > 300 ? "Përdor 1m ose 5m!" : "", text_color=color.orange)
+    table.cell(tb, 0, 1, "Trade", text_color=color.white)
+    table.cell(tb, 1, 1, str.tostring(st.n), text_color=color.white)
+    table.cell(tb, 0, 2, "Arritën TP", text_color=color.white)
+    table.cell(tb, 1, 2, str.tostring(st.tp), text_color=color.lime)
+    table.cell(tb, 0, 3, "Prekën SL", text_color=color.white)
+    table.cell(tb, 1, 3, str.tostring(st.sl), text_color=color.rgb(255, 90, 90))
+    table.cell(tb, 0, 4, "Mbyllur nga koha", text_color=color.white)
+    table.cell(tb, 1, 4, str.tostring(st.out), text_color=color.white)
+    table.cell(tb, 0, 5, "Fitojnë", text_color=color.white)
+    table.cell(tb, 1, 5, closed > 0 ? str.tostring(100.0 * st.win / closed, "0") + "%" : "-", text_color=color.white)
+    table.cell(tb, 0, 6, "Gjithsej R", text_color=color.white)
+    table.cell(tb, 1, 6, (st.sumR > 0 ? "+" : "") + str.tostring(st.sumR, "0.0"), text_color=st.sumR >= 0 ? color.lime : color.rgb(255, 90, 90))
+    table.cell(tb, 0, 7, "  New York", text_color=color.white)
+    table.cell(tb, 1, 7, (ny.sumR > 0 ? "+" : "") + str.tostring(ny.sumR, "0.0") + "R (" + str.tostring(ny.n) + ")", text_color=ny.sumR >= 0 ? color.lime : color.rgb(255, 90, 90))
+    table.cell(tb, 0, 8, "  Azia", text_color=color.white)
+    table.cell(tb, 1, 8, (asia.sumR > 0 ? "+" : "") + str.tostring(asia.sumR, "0.0") + "R (" + str.tostring(asia.n) + ")", text_color=asia.sumR >= 0 ? color.lime : color.rgb(255, 90, 90))
+    table.cell(tb, 0, 9, "Llogaria me " + str.tostring(riskPct, "0.0#") + "% rrezik", text_color=color.white)
+    table.cell(tb, 1, 9, (st.sumR > 0 ? "+" : "") + str.tostring(st.sumR * riskPct, "0.0") + "%", text_color=st.sumR >= 0 ? color.lime : color.rgb(255, 90, 90))
+    table.cell(tb, 0, 10, "Testi MT5 2020-2026", text_color=color.gray)
+    table.cell(tb, 1, 10, "+150R, 909 trade", text_color=color.gray)
