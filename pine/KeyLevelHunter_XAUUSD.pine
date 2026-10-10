@@ -11,8 +11,9 @@
 // SL beyond the zone plus a buffer; TP at the nearest opposite zone (next
 // liquidity) at least minRR away, or a fixed R. A zone is removed when it
 // is broken (close beyond it) or used for a trade. One open trade per
-// direction. Optional trend filter: only trades in the direction of the
-// 1H EMA (previous closed 1H bar) or of the last break of structure.
+// direction. Trend filter: only trades in the direction of the major
+// structure (the last close beyond a major swing high / low, swings of
+// strLen bars on each side) or of the 1H EMA (previous closed 1H bar).
 // SL is assumed first when SL and TP are hit in one bar.
 // Server hours are MT5 server time (New York + 7h). Results ignore the
 // spread. Use a 5m chart.
@@ -36,7 +37,8 @@ showZones = input.bool(true, "Vizato zonat", group=grpL)
 
 grpE    = "Hyrja dhe dalja"
 needCandle = input.bool(true, "Kërko qiri refuzimi (BUY jeshil / SELL i kuq)", group=grpE)
-trendMode = input.string("EMA 1H", "Vetëm në drejtim të trendit", options=["Jo", "EMA 1H", "Struktura (BOS)"], group=grpE)
+trendMode = input.string("Struktura (BOS)", "Vetëm në drejtim të trendit", options=["Jo", "EMA 1H", "Struktura (BOS)"], group=grpE)
+strLen  = input.int(36, "Struktura: qirinj në secilën anë", minval=5, group=grpE)
 emaLen  = input.int(50, "EMA 1H: gjatësia", minval=5, group=grpE)
 slBuf   = input.float(0.05, "SL përtej zonës (% e çmimit)", minval=0.0, step=0.01, group=grpE)
 maxSL   = input.float(0.50, "Kalo nëse SL është më larg se (% e çmimit)", minval=0.05, step=0.05, group=grpE)
@@ -132,11 +134,15 @@ var float        lastPH = na
 var float        lastPL = na
 var bool         phUsed = true
 var bool         plUsed = true
-var int          structure = 0     // +1 after a bullish break of structure, -1 after a bearish one
+var int          structure = 0     // +1 after a close above the last major swing high, -1 below the last major swing low
+var float        lastMPH = na
+var float        lastMPL = na
 
 [pdH, pdL] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead=barmerge.lookahead_on)
 float ph       = ta.pivothigh(high, pivLen, pivLen)
 float pl       = ta.pivotlow(low, pivLen, pivLen)
+float mph      = ta.pivothigh(high, strLen, strLen)
+float mpl      = ta.pivotlow(low, strLen, strLen)
 float tol      = close * tolPct / 100
 int   srvHour  = (hour(time, "America/New_York") + 7) % 24
 bool  inWindow = srvHour >= firstH and srvHour < lastH
@@ -180,17 +186,28 @@ if not na(ph)
 if usePD and newDay
     f_addZone(zones, 1, 2, pdL + tol, pdL - tol, bar_index)
     f_addZone(zones, -1, 2, pdH + tol, pdH - tol, bar_index)
-if not phUsed and not na(lastPH) and close > lastPH     // bullish break of structure
-    phUsed    := true
+// major structure: the trend
+if not na(mph)
+    lastMPH := mph
+if not na(mpl)
+    lastMPL := mpl
+if structure != 1 and not na(lastMPH) and close > lastMPH
     structure := 1
+    label.new(bar_index, high, "▲ Trendi lart", style=label.style_label_down, color=color.new(color.green, 20), textcolor=color.white, size=size.small)
+if structure != -1 and not na(lastMPL) and close < lastMPL
+    structure := -1
+    label.new(bar_index, low, "▼ Trendi poshtë", style=label.style_label_up, color=color.new(color.red, 20), textcolor=color.white, size=size.small)
+
+// minor breaks of structure: order blocks
+if not phUsed and not na(lastPH) and close > lastPH
+    phUsed    := true
     if useOB
         for i = 1 to obBack
             if close[i] < open[i]
                 f_addZone(zones, 1, 1, high[i], low[i], bar_index - i)
                 break
-if not plUsed and not na(lastPL) and close < lastPL     // bearish break of structure
+if not plUsed and not na(lastPL) and close < lastPL
     plUsed    := true
-    structure := -1
     if useOB
         for i = 1 to obBack
             if close[i] > open[i]
@@ -237,7 +254,7 @@ if array.size(zones) > 0
                     f_removeZone(zones, i)                // a zone is traded once
 
 // ===== Results table =====
-var table tb = table.new(position.top_right, 2, 9, bgcolor=color.rgb(20, 20, 20), border_width=1)
+var table tb = table.new(position.top_right, 2, 10, bgcolor=color.rgb(20, 20, 20), border_width=1)
 if barstate.islast
     int closed = st.tp + st.sl + st.out
     table.cell(tb, 0, 0, "Key Level Hunter", text_color=color.white)
@@ -258,3 +275,5 @@ if barstate.islast
     table.cell(tb, 1, 7, closed > 0 ? str.tostring(st.sumR / closed, "0.00") : "-", text_color=color.white)
     table.cell(tb, 0, 8, "Llogaria me " + str.tostring(riskPct, "0.0#") + "% rrezik", text_color=color.white)
     table.cell(tb, 1, 8, (st.sumR > 0 ? "+" : "") + str.tostring(st.sumR * riskPct, "0.0") + "%", text_color=st.sumR >= 0 ? color.lime : color.rgb(255, 90, 90))
+    table.cell(tb, 0, 9, "Trendi tani", text_color=color.white)
+    table.cell(tb, 1, 9, structure == 1 ? "▲ lart" : structure == -1 ? "▼ poshtë" : "-", text_color=structure == 1 ? color.lime : structure == -1 ? color.rgb(255, 90, 90) : color.white)
