@@ -11,7 +11,8 @@
 // SL beyond the zone plus a buffer; TP at the nearest opposite zone (next
 // liquidity) at least minRR away, or a fixed R. A zone is removed when it
 // is broken (close beyond it) or used for a trade. One open trade per
-// direction. SL is assumed first when SL and TP are hit in one bar.
+// direction. Optional trend filter: only trades in the direction of the
+// 1H EMA (previous closed 1H bar) or of the last break of structure. SL is assumed first when SL and TP are hit in one bar.
 // Server hours are MT5 server time (New York + 7h). Results ignore the
 // spread. Use a 5m chart.
 //@version=5
@@ -34,6 +35,8 @@ showZones = input.bool(true, "Vizato zonat", group=grpL)
 
 grpE    = "Hyrja dhe dalja"
 needCandle = input.bool(true, "Kërko qiri refuzimi (BUY jeshil / SELL i kuq)", group=grpE)
+trendMode = input.string("EMA 1H", "Vetëm në drejtim të trendit", options=["Jo", "EMA 1H", "Struktura (BOS)"], group=grpE)
+emaLen  = input.int(50, "EMA 1H: gjatësia", minval=5, group=grpE)
 slBuf   = input.float(0.05, "SL përtej zonës (% e çmimit)", minval=0.0, step=0.01, group=grpE)
 maxSL   = input.float(0.50, "Kalo nëse SL është më larg se (% e çmimit)", minval=0.05, step=0.05, group=grpE)
 tpMode  = input.string("Likuiditeti i radhës", "TP", options=["Likuiditeti i radhës", "R"], group=grpE)
@@ -96,7 +99,7 @@ f_addZone(array<Zone> zones, int dir, int kind, float top, float bot, int leftBa
     if not dup
         box b = na
         if showZones
-            color c = dir == 1 ? (kind == 1 ? color.new(color.blue, 80) : color.new(color.teal, 85)) : (kind == 1 ? color.new(color.orange, 80) : color.new(color.red, 85))
+            color c = dir == 1 ? (kind == 1 ? color.new(color.blue, 88) : color.new(color.teal, 92)) : (kind == 1 ? color.new(color.orange, 88) : color.new(color.red, 92))
             b := box.new(leftBar, top, bar_index, bot, border_color=c, bgcolor=c, extend=extend.right)
         array.push(zones, Zone.new(dir, kind, top, bot, bar_index, b))
         if cnt >= maxZones and oldest >= 0              // keep at most maxZones per side
@@ -128,6 +131,7 @@ var float        lastPH = na
 var float        lastPL = na
 var bool         phUsed = true
 var bool         plUsed = true
+var int          structure = 0     // +1 after a bullish break of structure, -1 after a bearish one
 
 [pdH, pdL] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead=barmerge.lookahead_on)
 float ph       = ta.pivothigh(high, pivLen, pivLen)
@@ -136,6 +140,8 @@ float tol      = close * tolPct / 100
 int   srvHour  = (hour(time, "America/New_York") + 7) % 24
 bool  inWindow = srvHour >= firstH and srvHour < lastH
 bool  newDay   = timeframe.change("D")
+float emaH     = request.security(syminfo.tickerid, "60", ta.ema(close, emaLen)[1], lookahead=barmerge.lookahead_on)
+int   emaTrend = close > emaH ? 1 : -1
 
 // ===== 1) follow the open trades =====
 if array.size(trades) > 0
@@ -173,18 +179,22 @@ if not na(ph)
 if usePD and newDay
     f_addZone(zones, 1, 2, pdL + tol, pdL - tol, bar_index)
     f_addZone(zones, -1, 2, pdH + tol, pdH - tol, bar_index)
-if useOB and not phUsed and not na(lastPH) and close > lastPH     // bullish break of structure
-    phUsed := true
-    for i = 1 to obBack
-        if close[i] < open[i]
-            f_addZone(zones, 1, 1, high[i], low[i], bar_index - i)
-            break
-if useOB and not plUsed and not na(lastPL) and close < lastPL     // bearish break of structure
-    plUsed := true
-    for i = 1 to obBack
-        if close[i] > open[i]
-            f_addZone(zones, -1, 1, high[i], low[i], bar_index - i)
-            break
+if not phUsed and not na(lastPH) and close > lastPH     // bullish break of structure
+    phUsed    := true
+    structure := 1
+    if useOB
+        for i = 1 to obBack
+            if close[i] < open[i]
+                f_addZone(zones, 1, 1, high[i], low[i], bar_index - i)
+                break
+if not plUsed and not na(lastPL) and close < lastPL     // bearish break of structure
+    plUsed    := true
+    structure := -1
+    if useOB
+        for i = 1 to obBack
+            if close[i] > open[i]
+                f_addZone(zones, -1, 1, high[i], low[i], bar_index - i)
+                break
 
 // ===== 3) entries at the zones =====
 bool longOpen  = false
@@ -205,7 +215,8 @@ if array.size(zones) > 0
         else if touched and bar_index - z.born >= minAge and inWindow
             bool candleOk = not needCandle or (z.dir == 1 ? close > open : close < open)
             bool sideFree = z.dir == 1 ? not longOpen : not shortOpen
-            if candleOk and sideFree
+            bool trendOk  = trendMode == "Jo" or (trendMode == "EMA 1H" ? z.dir == emaTrend : z.dir == structure)
+            if candleOk and sideFree and trendOk
                 float sl   = z.dir == 1 ? math.min(z.bot, low) - close * slBuf / 100 : math.max(z.top, high) + close * slBuf / 100
                 float risk = z.dir * (close - sl)
                 float tp   = tpMode == "R" ? close + z.dir * tpR * risk : f_target(zones, z.dir, close, minRR * risk)
