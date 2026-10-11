@@ -1,0 +1,21 @@
+; LiquidityATR_EURUSD - optimization ranges for the MT5 Strategy Tester (EURUSD M10, server GMT+2/+3)
+; Load: Strategy Tester > Inputs > right-click > Load. Format: value||start||step||stop||optimize(Y/N)
+RiskPercent=0.5||0.5||0.1||2.0||N
+ATR_Period=16||10||4||22||Y
+ATR_Mult=2.6||1.4||0.4||3.0||Y
+ATR_RR=2.4||1.6||0.4||3.2||Y
+LiquidityHour1=14||8||1||18||Y
+LiquidityMin1=20||0||10||50||Y
+LiquidityHour2=-1||-1||1||-1||N
+LiquidityMin2=0||0||1||0||N
+EntryWindowMin=120||60||60||240||N
+EntryMode=0||0||1||1||Y
+BufferPoints=0||0||1||0||N
+TradeFriday=true||false||0||true||N
+UseNewsFilter=false||false||0||true||N
+NewsMinutes=30||30||1||30||N
+MaxSpreadPoints=0||0||1||0||N
+CloseAtTime=true||false||0||true||N
+CloseHour=22||22||1||22||N
+CloseMin=45||45||1||45||N
+MagicNumber=500500||500500||1||500500||N
