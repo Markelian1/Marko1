@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using cAlgo.API;
 
 namespace cAlgo.Robots
@@ -173,29 +174,64 @@ namespace cAlgo.Robots
             return new Outgoing { Id = id, ClosedAt = last.ClosingTime, Json = json.ToString() };
         }
 
+        // true = u krye (mos e dërgo më), false = provo përsëri më vonë
         private bool Send(Outgoing o)
         {
+            string body;
+            int code;
             try
             {
-                var request = new HttpRequest(new Uri(Url)) { Method = HttpMethod.Post, Body = o.Json };
-                var response = Http.Send(request);
-                int code = (int)response.StatusCode;
-                // Google përgjigjet me ridrejtim (302) pasi e ka shkruar rreshtin.
-                if (response.IsSuccessful || (code >= 300 && code < 400))
+                var response = Http.Send(new HttpRequest(new Uri(Url)) { Method = HttpMethod.Post, Body = o.Json });
+                code = (int)response.StatusCode;
+                body = response.Body ?? "";
+                // Google e jep përgjigjen pas një ridrejtimi (302). Nëse nuk u ndoq vetë, ndiqe këtu.
+                var link = RedirectLink(body);
+                if (!body.Contains("\"ok\":") && link != null)
                 {
-                    if (response.Body != null && response.Body.Contains("\"ok\":false"))
-                        Print("Google Script nuk e pranoi pozicionin #{0}: {1}", o.Id, response.Body);
-                    else
-                        Print("Pozicioni #{0} u shkrua te Raporti.", o.Id);
-                    return true;
+                    var echo = Http.Get(link);
+                    code = (int)echo.StatusCode;
+                    body = echo.Body ?? "";
                 }
-                Print("Dërgimi dështoi (kodi {0}). Do provohet përsëri.", code);
             }
             catch (Exception e)
             {
                 Print("Dërgimi dështoi: {0}. Do provohet përsëri.", e.Message);
+                return false;
             }
+
+            if (body.Contains("\"ok\":true"))
+            {
+                var row = Regex.Match(body, "\"row\":(\\d+)");
+                if (row.Success)
+                    Print("Pozicioni #{0} u shkrua te Raporti, rreshti {1}.", o.Id, row.Groups[1].Value);
+                else
+                    Print("Pozicioni #{0} ishte tashmë te Raporti.", o.Id);
+                return true;
+            }
+            if (code >= 500 || code == 429)
+            {
+                Print("Google nuk u përgjigj (kodi {0}). Do provohet përsëri.", code);
+                return false;
+            }
+
+            var error = Regex.Match(body, "\"error\":\"([^\"]*)\"");
+            Print("GABIM: pozicioni #{0} NUK u shkrua. Google: {1}", o.Id,
+                  error.Success ? error.Groups[1].Value : "kodi " + code + ", " + Snippet(body));
+            Print("Rregulloje sipas ctrader/UDHEZIME.md dhe nise prapë cBot-in. Trade-t e padërguara dërgohen atëherë.");
+            Stop();
             return false;
+        }
+
+        private static string RedirectLink(string html)
+        {
+            var m = Regex.Match(html, "href=\"(https://script\\.google(usercontent)?\\.com/[^\"]+)\"", RegexOptions.IgnoreCase);
+            return m.Success ? m.Groups[1].Value.Replace("&amp;", "&") : null;
+        }
+
+        private static string Snippet(string html)
+        {
+            var text = Regex.Replace(Regex.Replace(html, "<[^>]+>", " "), "\\s+", " ").Trim();
+            return text.Length > 200 ? text.Substring(0, 200) + "..." : text;
         }
 
         private void Remember(Position p)

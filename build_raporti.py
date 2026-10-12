@@ -294,7 +294,7 @@ def build_main(wb, trades, demo):
     ws.merge_cells("C8:C9")
     ws["B8"] = "PnL"
     ws["B8"].font = font(size=15, bold=True)
-    ws["C8"] = f"=$AA${LAST}-1"
+    ws["C8"] = f"=EXP(SUM($AA${FIRST}:$AA${LAST}))-1"
     ws["C8"].font = font(GREEN, 15, True)
     ws["C8"].number_format = "0.00%"
     for ref in ("B8", "C8"):
@@ -324,10 +324,9 @@ def build_main(wb, trades, demo):
     for i, h in enumerate(headers):
         c = ws.cell(11, 2 + i, h)
         c.font, c.fill, c.alignment, c.border = font(BLUE, 11, True), fill(HEAD_BG), CENTER, BOX
-    for col, h in (("Z", "Brenda periudhës"), ("AA", "Faktori i balancës"), ("AB", "Kategoria"), ("AC", "cTrader ID")):
+    for col, h in (("Z", "Brenda periudhës"), ("AA", "ln(1+Net)"), ("AB", "Kategoria"), ("AC", "cTrader ID")):
         ws[f"{col}11"] = h
         ws[f"{col}11"].font = font(GREY, 9, True)
-    ws[f"AA{FIRST - 1}"] = 1  # pika e nisjes: balanca = 100%
 
     status_rng = f"{SETQ}!$A$6:$A$10"
     for r in range(FIRST, LAST + 1):
@@ -347,13 +346,14 @@ def build_main(wb, trades, demo):
                       f'+INDEX({SETQ}!$D$6:$D$10,MATCH($F{r},{status_rng},0))))')
         ws.cell(r, 7).number_format = "0.00%"
         ws.cell(r, 7).font = font(GREY, bold=True)
-        ws.cell(r, 8, f'=IF($Z{r}=1,$AA{r}-1,"")')
+        ws.cell(r, 8, f'=IF($Z{r}=1,EXP(SUM($AA${FIRST}:$AA{r}))-1,"")')
         ws.cell(r, 8).number_format = "0.00%"
         ws.cell(r, 8).font = font(bold=True)
         # kolonat ndihmëse (të fshehura)
         ws[f"Z{r}"] = (f'=IF($AB{r}="",0,IF(ISNUMBER($B{r}),IF(AND($B{r}>=N($B$3),'
                        f'OR(NOT(ISNUMBER($D$3)),$B{r}<=$D$3)),1,0),1))')
-        ws[f"AA{r}"] = f"=$AA{r - 1}*(1+IF($Z{r}=1,N($G{r}),0))"
+        # rritje e përbërë si shumë logaritmesh: një rresht i fshirë nuk prish rreshtat e tjerë
+        ws[f"AA{r}"] = f"=IF($Z{r}=1,LN(MAX(1E-9,1+N($G{r}))),0)"
         ws[f"AB{r}"] = f'=IF($F{r}="","",IFERROR(INDEX({SETQ}!$B$6:$B$10,MATCH($F{r},{status_rng},0)),""))'
     for col in ("Z", "AA", "AB", "AC"):
         ws.column_dimensions[col].hidden = True
@@ -426,7 +426,7 @@ def build_guide(wb):
         ("2. Plotëso: Data, Pair, Setup, R:R dhe Status i pozitës (zgjidhe nga lista). Shënime është opsionale.", None),
         ("3. Net, Balance, Total Trades/WINS/LOSS/BE, Winrate, PnL dhe grafikët llogariten automatikisht – mos i shkruaj me dorë.", None),
         ("4. Periudha e raportit: ndrysho datat te B3 (nga) dhe D3 (deri). Llogariten vetëm trade-t brenda periudhës.", None),
-        ("5. Fshi rreshtin shembull (rreshti 12) para se të fillosh. Ka vend për 500 trade (rreshtat 12–511).", None),
+        ("5. Fshi rreshtin shembull: zgjidh B12:I12 dhe shtyp Delete. Ka vend për 500 trade (rreshtat 12–511).", None),
         ("6. Shkruaji trade-t me radhë kronologjike – Balance llogaritet nga lart poshtë.", None),
         ("", None),
         ("Si llogaritet", "head"),

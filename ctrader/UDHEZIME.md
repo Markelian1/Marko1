@@ -18,7 +18,8 @@ Bëje nga kompjuteri (në shfletues), sepse në aplikacionin e telefonit nuk ka 
 1. Hap **sheets.new** në shfletues (krijon një fletë të re bosh).
 2. **File → Import → Upload** → zgjidh `Raporti_i_Analizave.xlsx`.
 3. Te *Import location* zgjidh **Replace spreadsheet** → **Import data**.
-4. Riemërtoje lart majtas (p.sh. *Raporti i Analizave*) dhe fshi rreshtin shembull (rreshti 12).
+4. Riemërtoje lart majtas (p.sh. *Raporti i Analizave*).
+5. Fshi rreshtin shembull: zgjidh qelizat **B12:I12** dhe shtyp **Delete** (mos e fshi gjithë rreshtin).
 
 Si e kupton që është në rregull: pranë emrit lart **nuk** duhet të shkruajë `.XLSX`, dhe te menyja **Extensions** shfaqet **Apps Script**.
 
@@ -34,6 +35,8 @@ Si e kupton që është në rregull: pranë emrit lart **nuk** duhet të shkruaj
    (Paralajmërimi del sepse skripti është yti dhe nuk është verifikuar nga Google.)
 6. Kopjo **Web app URL** (mbaron me `/exec`).
 7. Provë: hape URL-në në shfletues, duhet të shkruajë *"Lidhja me Raportin e Analizave punon."*
+8. **Grafikët:** lart në Apps Script, te lista e funksioneve (pranë ▷ Run), zgjidh **rregulloRaportin** dhe kliko **▷ Run**.
+   Ndërton grafikët Balance dhe Winrate direkt në Google Sheets dhe rikthen formulat nëse janë fshirë.
 
 > Nëse e ndryshon kodin më vonë: **Deploy → Manage deployments → ✏️ → Version: New version → Deploy**.
 > Përndryshe URL-ja vazhdon të përdorë kodin e vjetër.
@@ -81,9 +84,15 @@ Kujdes: një trade i mbyllur me dorë në fitim (p.sh. +0.5R) del **TP**. Nëse 
 
 ## Nëse diçka nuk punon
 
-| Mesazhi te Log | Zgjidhja |
+Kur Google nuk e pranon një trade, cBot-i shkruan te **Logs** `GABIM: … NUK u shkrua. Google: …` dhe ndalon.
+Rregulloje sipas tabelës, pastaj nise prapë: trade-t e padërguara dërgohen atëherë.
+
+| Mesazhi te Logs | Zgjidhja |
 |---|---|
-| `token i gabuar` | Token-i te cBot-i nuk është i njëjtë me `TOKEN` te skripti |
+| `token i gabuar` | `TOKEN` te skripti duhet të jetë **saktësisht** si Token te cBot-i. Pastaj: Save → Deploy → Manage deployments → ✏️ → New version |
+| `Moved Temporarily` ose `Sign in` | Te Deploy zgjidh *Who has access: **Anyone***, pastaj bëj New version |
+| `Script function not found: doPost` | Kodi nuk u ruajt para Deploy. Save → Manage deployments → ✏️ → New version |
+| `skripti nuk është i lidhur me raportin` | Krijoje skriptin nga vetë raporti: Extensions → Apps Script |
 | `Dërgimi dështoi (kodi 401/403)` | Te Deploy zgjidh *Who has access: **Anyone***, pastaj bëj New version |
 | `Dërgimi dështoi (kodi 404)` | URL-ja është e gabuar. Kopjo prapë Web app URL (`/exec`) |
 | `raporti është plot` | Janë mbushur 500 rreshta. Fillo një raport të ri për vitin tjetër |
