@@ -12,9 +12,15 @@ Duhen 3 hapa, që bëhen vetëm një herë.
 
 ## Hapi 1 – Raporti në Google Sheets
 
-1. Ngarko `Raporti_i_Analizave.xlsx` në Google Drive dhe hape me **Google Sheets**.
-2. **File → Save as Google Sheets** (pa këtë hap nuk shfaqet menyja Apps Script).
-3. Fshi rreshtin shembull (rreshti 12).
+Raporti duhet të jetë **Google Sheets i vërtetë**, jo skedar `.xlsx`, ndryshe nuk shfaqet menyja Apps Script.
+Bëje nga kompjuteri (në shfletues), sepse në aplikacionin e telefonit nuk ka Apps Script.
+
+1. Hap **sheets.new** në shfletues (krijon një fletë të re bosh).
+2. **File → Import → Upload** → zgjidh `Raporti_i_Analizave.xlsx`.
+3. Te *Import location* zgjidh **Replace spreadsheet** → **Import data**.
+4. Riemërtoje lart majtas (p.sh. *Raporti i Analizave*) dhe fshi rreshtin shembull (rreshti 12).
+
+Si e kupton që është në rregull: pranë emrit lart **nuk** duhet të shkruajë `.XLSX`, dhe te menyja **Extensions** shfaqet **Apps Script**.
 
 ## Hapi 2 – Google Apps Script
 
