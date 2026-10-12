@@ -215,8 +215,11 @@ namespace cAlgo.Robots
             }
 
             var error = Regex.Match(body, "\"error\":\"([^\"]*)\"");
-            Print("GABIM: pozicioni #{0} NUK u shkrua. Google: {1}", o.Id,
-                  error.Success ? error.Groups[1].Value : "kodi " + code + ", " + Snippet(body));
+            string reason = error.Success ? error.Groups[1].Value
+                : code == 401 || code == 403
+                    ? "kodi " + code + ": Google kërkon hyrje. Te Deploy vendos 'Who has access: Anyone' dhe përdor URL-në që mbaron me /exec"
+                    : "kodi " + code + ", " + Snippet(body);
+            Print("GABIM: pozicioni #{0} NUK u shkrua. Google: {1}", o.Id, reason);
             Print("Rregulloje sipas ctrader/UDHEZIME.md dhe nise prapë cBot-in. Trade-t e padërguara dërgohen atëherë.");
             Stop();
             return false;
@@ -230,7 +233,8 @@ namespace cAlgo.Robots
 
         private static string Snippet(string html)
         {
-            var text = Regex.Replace(Regex.Replace(html, "<[^>]+>", " "), "\\s+", " ").Trim();
+            var text = Regex.Replace(html, "<(script|style)[^>]*>.*?</\\1>", " ", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            text = Regex.Replace(Regex.Replace(text, "<[^>]+>", " "), "\\s+", " ").Trim();
             return text.Length > 200 ? text.Substring(0, 200) + "..." : text;
         }
 

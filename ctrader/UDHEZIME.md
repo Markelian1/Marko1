@@ -90,10 +90,9 @@ Rregulloje sipas tabelës, pastaj nise prapë: trade-t e padërguara dërgohen a
 | Mesazhi te Logs | Zgjidhja |
 |---|---|
 | `token i gabuar` | `TOKEN` te skripti duhet të jetë **saktësisht** si Token te cBot-i. Pastaj: Save → Deploy → Manage deployments → ✏️ → New version |
-| `Moved Temporarily` ose `Sign in` | Te Deploy zgjidh *Who has access: **Anyone***, pastaj bëj New version |
+| `kodi 401`, `kodi 403`, `Moved Temporarily` ose `Sign in` | Web app-i kërkon hyrje në Google. Bëj **Deploy → New deployment → Web app** me *Who has access: **Anyone*** dhe vendos URL-në e re `/exec` te cBot-i. Provë: hape URL-në në dritare Incognito, duhet të dalë *"Lidhja … punon"* pa kërkuar hyrje |
 | `Script function not found: doPost` | Kodi nuk u ruajt para Deploy. Save → Manage deployments → ✏️ → New version |
 | `skripti nuk është i lidhur me raportin` | Krijoje skriptin nga vetë raporti: Extensions → Apps Script |
-| `Dërgimi dështoi (kodi 401/403)` | Te Deploy zgjidh *Who has access: **Anyone***, pastaj bëj New version |
 | `Dërgimi dështoi (kodi 404)` | URL-ja është e gabuar. Kopjo prapë Web app URL (`/exec`) |
 | `raporti është plot` | Janë mbushur 500 rreshta. Fillo një raport të ri për vitin tjetër |
 | Nuk shfaqet asgjë te raporti | Kontrollo që fleta të quhet saktë `Raporti` dhe që e ke ruajtur si Google Sheets (Hapi 1) |
