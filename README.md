@@ -7,4 +7,6 @@ statistikat (Total Trades / WINS / LOSS / BE, Winrate, PnL), grafikët e Balance
 - Rreziku për trade dhe vlerat e statuseve ndryshohen te fleta **Cilësimet**.
 - Udhëzimet e plota janë te fleta **Udhëzime**.
 
+**Lidhja automatike me cTrader:** trade-t e mbyllura shkruhen vetë te raporti. Shih [`ctrader/UDHEZIME.md`](ctrader/UDHEZIME.md).
+
 Për ta rikrijuar skedarin: `python3 build_raporti.py`

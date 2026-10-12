@@ -324,7 +324,7 @@ def build_main(wb, trades, demo):
     for i, h in enumerate(headers):
         c = ws.cell(11, 2 + i, h)
         c.font, c.fill, c.alignment, c.border = font(BLUE, 11, True), fill(HEAD_BG), CENTER, BOX
-    for col, h in (("Z", "Brenda periudhës"), ("AA", "Faktori i balancës"), ("AB", "Kategoria")):
+    for col, h in (("Z", "Brenda periudhës"), ("AA", "Faktori i balancës"), ("AB", "Kategoria"), ("AC", "cTrader ID")):
         ws[f"{col}11"] = h
         ws[f"{col}11"].font = font(GREY, 9, True)
     ws[f"AA{FIRST - 1}"] = 1  # pika e nisjes: balanca = 100%
@@ -355,7 +355,7 @@ def build_main(wb, trades, demo):
                        f'OR(NOT(ISNUMBER($D$3)),$B{r}<=$D$3)),1,0),1))')
         ws[f"AA{r}"] = f"=$AA{r - 1}*(1+IF($Z{r}=1,N($G{r}),0))"
         ws[f"AB{r}"] = f'=IF($F{r}="","",IFERROR(INDEX({SETQ}!$B$6:$B$10,MATCH($F{r},{status_rng},0)),""))'
-    for col in ("Z", "AA", "AB"):
+    for col in ("Z", "AA", "AB", "AC"):
         ws.column_dimensions[col].hidden = True
 
     for i, (d, pair, setup, status, rr, note) in enumerate(trades):
@@ -438,6 +438,9 @@ def build_guide(wb):
         ("", None),
         ("Google Sheets", "head"),
         ("Ngarkoje skedarin në Google Drive → hape me Google Sheets (ose: File → Import → Upload).", None),
+        ("", None),
+        ("Lidhja me cTrader", "head"),
+        ("Trade-t mund të vijnë automatikisht nga cTrader: shih ctrader/UDHEZIME.md (cBot RaportiSync + Google Apps Script).", None),
         ("", None),
         ("Ngjyrat", "head"),
         ("Qelizat me sfond pak më të çelët janë për t'u plotësuar. Qelizat e errëta llogariten vetë.", None),
