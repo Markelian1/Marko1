@@ -1,0 +1,29 @@
+{
+  "$schema": "https://polsia.app/schema/installed.v1.json",
+  "_doc": "Machine-owned trust anchor (per D21). Installed modules + versions + install-hashes + ejected files + slot assignments + day-1 validator floor. Users must NOT edit this file; the framework can no longer trust the state if they do. Hand-editable per-module overrides live in .polsia/overrides.json. Path -> tier mapping lives in .polsia/ownership.json (generated from installed manifests).",
+  "template": {
+    "id": "polsia-next-v2",
+    "name": "polsia/template-next",
+    "version": "0.3.0",
+    "framework": "next",
+    "framework_version": "16.2.6",
+    "installed_at": "PLACEHOLDER_TIMESTAMP",
+    "install_hash": "PLACEHOLDER_HASH"
+  },
+  "modules": [],
+  "install_hashes": {},
+  "ejected_files": [],
+  "slot_assignments": {},
+  "day_1_floor": [
+    "no-secrets-in-client-bundle",
+    "server-only-import-on-secret-modules",
+    "agent-has-no-prod-db-credentials",
+    "db-ssl-required",
+    "parameterized-queries-only",
+    "security-headers-present",
+    "lockfile-committed-and-pinned",
+    "lifecycle-scripts-disabled",
+    "next-version-not-affected-by-cve-2025-29927"
+  ],
+  "_note_day_1_floor": "Templates are scaffolds with the shadcn/UI baseline shipped IN the template (components.json + cn() + a committed base primitive set + a next-themes ThemeProvider + a token-driven theme), plus the framework-native default DB client (Prisma for template-next). This floor is the scaffold-applicable validator set plus the data checks the baked-in DB client makes runnable on day 1. Other module-specific validators ship in module manifests and are added when those modules install. Validator names must exist in Polsia-Inc/modules/validators/README.md."
+}

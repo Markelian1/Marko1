@@ -1,0 +1,559 @@
+/* @polsia:user-owned */
+.heading {
+  margin-bottom: 36px;
+}
+.heading h2 {
+  max-width: 650px;
+  font-size: clamp(30px, 3.5cqw, 45px);
+}
+.heading p {
+  max-width: 58ch;
+  margin-top: 16px;
+  font-size: 14px;
+  line-height: 1.8;
+}
+.photo {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--land-tint);
+  border-radius: var(--land-radius);
+}
+.photo img {
+  object-fit: cover;
+}
+.photo figcaption {
+  position: absolute;
+  inset: auto 12px 12px;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  padding: 8px 12px;
+  border-radius: calc(var(--land-radius) * 0.55);
+  background: var(--land-bg);
+  color: var(--land-ink);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.heroCopy {
+  min-width: 0;
+}
+.heroCopy h1 {
+  font-size: clamp(40px, 5.5cqw, 76px);
+  max-width: 13ch;
+}
+.heroCopy .eyebrow {
+  margin-bottom: 22px;
+  color: var(--land-accent-ink);
+  font-size: 13px;
+}
+.heroDescription {
+  max-width: 48ch;
+  margin-top: 24px;
+  font-size: 15px;
+  line-height: 1.85;
+  text-wrap: pretty;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 30px;
+}
+.heroNote {
+  margin-top: 18px;
+  font-size: 12px;
+}
+.immersive {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: clamp(540px, 57cqw, 780px);
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: var(--land-radius);
+  background: #181818;
+}
+.immersiveImage {
+  z-index: -2;
+  object-fit: cover;
+}
+.immersive::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    90deg,
+    rgb(0 0 0 / 78%) 0%,
+    rgb(0 0 0 / 65%) 48%,
+    rgb(0 0 0 / 15%) 100%
+  );
+}
+.immersiveContent {
+  padding: clamp(28px, 5.6cqw, 80px);
+  width: 100%;
+}
+.immersive .heroCopy {
+  max-width: 660px;
+}
+.immersive .heroCopy h1 {
+  color: #fff;
+}
+.immersive .heroCopy p {
+  color: rgb(255 255 255 / 90%);
+}
+.immersive .heroCopy .eyebrow {
+  color: #fff;
+}
+.immersive .actions > a:nth-child(2) {
+  color: #fff;
+  border-color: rgb(255 255 255 / 65%);
+  background: transparent;
+}
+.immersive .actions > a:nth-child(2):hover {
+  color: #181818;
+  border-color: #fff;
+  background: #fff;
+}
+.immersive .immersiveCaption {
+  position: absolute;
+  bottom: 20px;
+  right: 24px;
+  max-width: 38%;
+  padding: 6px 10px;
+  border-radius: calc(var(--land-radius) * 0.5);
+  background: rgb(0 0 0 / 65%);
+  color: #fff;
+  font-size: 11px;
+  text-align: right;
+}
+.collageHero {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  align-items: center;
+  gap: 6%;
+}
+.collageHero .heroCopy h1 {
+  font-size: clamp(38px, 4.8cqw, 66px);
+}
+.collage {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  grid-template-rows: repeat(2, minmax(180px, 20cqw));
+  gap: 16px;
+  align-items: stretch;
+}
+.collage .photo:first-child {
+  grid-row: 1 / 3;
+  margin-block: 36px;
+}
+.collage .photo:nth-child(2) {
+  margin-right: 18px;
+}
+.collage .photo:nth-child(3) {
+  margin-left: 18px;
+}
+.collage[data-count="2"] .photo:nth-child(2) {
+  grid-row: 1 / 3;
+  margin-block: 110px 0;
+  margin-right: 0;
+}
+.bento {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.bentoCard {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--land-radius);
+  background: color-mix(in srgb, var(--land-tint) 54%, var(--land-bg));
+  border: 1px solid var(--land-line);
+}
+.bentoCard:first-child {
+  grid-column: span 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.bentoCard:first-child:not(:has(.photo)) {
+  grid-template-columns: 1fr;
+}
+.bentoCard:nth-child(4n) {
+  grid-column: span 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.bentoCard:nth-child(4n):not(:has(.photo)) {
+  grid-template-columns: 1fr;
+}
+.bentoCopy {
+  padding: clamp(24px, 2.8cqw, 40px);
+  min-width: 0;
+}
+.featureIcon {
+  margin-bottom: 32px;
+  color: var(--land-accent-ink);
+}
+.bentoCopy h3 {
+  margin-bottom: 12px;
+}
+.bentoCopy p {
+  max-width: 46ch;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.bentoCard .photo {
+  flex: 1;
+  min-height: 210px;
+  border-radius: 0;
+}
+.tabList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.tabList[hidden],
+.tabPanel[hidden] {
+  display: none;
+}
+.tabList button {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 46px;
+  padding: 12px 18px;
+  border: 1px solid var(--land-line);
+  border-radius: var(--land-radius);
+  background: var(--land-bg);
+  color: var(--land-ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+.tabList button[aria-selected="true"] {
+  color: var(--land-on-accent);
+  background: var(--land-accent);
+  border-color: var(--land-accent);
+}
+.tabList button:focus-visible,
+.tabPanel:focus-visible {
+  outline: 3px solid var(--land-accent);
+  outline-offset: 5px;
+}
+.tabPanels {
+  display: grid;
+  gap: 22px;
+}
+.tabPanel {
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  align-items: stretch;
+  gap: 6%;
+  padding: 24px;
+  background: color-mix(in srgb, var(--land-tint) 54%, var(--land-bg));
+  border-radius: var(--land-radius);
+  border: 1px solid var(--land-line);
+}
+.tabCopy {
+  align-self: center;
+  padding: clamp(6px, 2.5cqw, 36px);
+}
+.tabs .tabCopy h3 {
+  font-family: var(--land-display);
+  font-size: clamp(24px, 2.7cqw, 36px);
+  line-height: 1.2;
+}
+.tabCopy p {
+  max-width: 44ch;
+  margin-top: 18px;
+  font-size: 14px;
+  line-height: 1.85;
+}
+.tabPanel .photo {
+  width: 100%;
+  min-height: 340px;
+  aspect-ratio: 4 / 3;
+}
+.catalog {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 42px 24px;
+}
+.catalogItem {
+  min-width: 0;
+}
+.catalogItem .photo {
+  aspect-ratio: 4 / 5;
+}
+.catalogCopy {
+  padding-top: 18px;
+}
+.catalogTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 18px;
+}
+.catalog .catalogTitle h3 {
+  font-size: 18px;
+}
+.catalogCopy > p:not(.tag) {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.catalogCopy .tag {
+  font-size: 11px;
+  color: var(--land-accent-ink);
+  margin-bottom: 7px;
+}
+.price {
+  flex-shrink: 0;
+  color: var(--land-ink);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.itemAction {
+  margin-top: 18px;
+}
+.menu {
+  display: grid;
+  grid-template-columns: 0.6fr 1.4fr;
+  gap: 8%;
+  align-items: start;
+}
+.menuGroups {
+  display: grid;
+  gap: 38px;
+  min-width: 0;
+}
+.menu .menuGroup > h3 {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--land-ink);
+  font-family: var(--land-display);
+  font-size: 25px;
+}
+.menuGroup ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.menuRow {
+  display: flex;
+  gap: 18px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--land-line);
+}
+.menuRow .photo {
+  width: 88px;
+  height: 100px;
+  flex-shrink: 0;
+}
+.menuCopy {
+  flex: 1;
+  min-width: 0;
+}
+.menuTitle {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 20px;
+}
+.menuTitle h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.menuCopy p {
+  max-width: 54ch;
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.75;
+}
+.menuTag {
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--land-accent-ink);
+  font-size: 11px;
+}
+.menuRow .itemAction {
+  margin-top: 12px;
+}
+
+@container landing (min-width: 481px) {
+  .bento:has(> .bentoCard:nth-child(3):last-child) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container landing (max-width: 1000px) {
+  .collageHero {
+    gap: 4%;
+  }
+  .collage {
+    grid-template-rows: repeat(2, minmax(165px, 22cqw));
+    gap: 10px;
+  }
+  .collage .photo figcaption {
+    font-size: 10px;
+    inset-inline: 8px;
+    max-width: calc(100% - 16px);
+    padding: 6px 8px;
+  }
+  .catalog {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .menu {
+    gap: 5%;
+    grid-template-columns: 0.7fr 1.3fr;
+  }
+  .tabPanel .photo {
+    min-height: 280px;
+  }
+}
+
+@container landing (max-width: 760px) {
+  .heading {
+    margin-bottom: 28px;
+  }
+  .collageHero {
+    grid-template-columns: 1fr;
+    gap: 34px;
+  }
+  .collageHero .heroCopy h1 {
+    max-width: 16ch;
+    font-size: clamp(40px, 7cqw, 60px);
+  }
+  .collage {
+    grid-template-rows: repeat(2, minmax(160px, 30cqw));
+  }
+  .collage .photo:first-child {
+    margin-block: 24px;
+  }
+  .collage[data-count="2"] .photo:nth-child(2) {
+    margin-top: 80px;
+  }
+  .immersive {
+    min-height: 590px;
+  }
+  .immersive::after {
+    background: linear-gradient(90deg, rgb(0 0 0 / 76%), rgb(0 0 0 / 55%));
+  }
+  .immersive .immersiveCaption {
+    max-width: calc(100% - 40px);
+    bottom: 16px;
+    right: 20px;
+  }
+  .bento {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .bentoCard:nth-child(4n) {
+    grid-column: auto;
+    display: flex;
+  }
+  .tabPanel {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    padding: 22px;
+  }
+  .tabCopy {
+    padding: 4px;
+  }
+  .tabPanel .photo {
+    min-height: 240px;
+  }
+  .menu {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+@container landing (max-width: 480px) {
+  .heroCopy h1,
+  .collageHero .heroCopy h1 {
+    font-size: clamp(34px, 9cqw, 43px);
+  }
+  .heroDescription {
+    font-size: 14px;
+    margin-top: 18px;
+  }
+  .immersive {
+    min-height: 610px;
+  }
+  .immersiveContent {
+    padding: 30px 24px 64px;
+  }
+  .actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .actions > a {
+    width: 100%;
+    justify-content: center;
+  }
+  .collage {
+    grid-template-rows: repeat(2, minmax(135px, 36cqw));
+    gap: 10px;
+  }
+  .collage .photo:nth-child(2) {
+    margin-right: 0;
+  }
+  .collage .photo:nth-child(3) {
+    margin-left: 0;
+  }
+  .collage .photo figcaption {
+    font-size: 9px;
+  }
+  .bento {
+    grid-template-columns: 1fr;
+  }
+  .bentoCard:first-child,
+  .bentoCard:nth-child(4n) {
+    grid-column: auto;
+    display: flex;
+  }
+  .bentoCopy {
+    padding: 26px;
+  }
+  .featureIcon {
+    margin-bottom: 22px;
+  }
+  .catalog {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  .catalogItem .photo {
+    aspect-ratio: 1;
+  }
+  .tabList {
+    gap: 7px;
+  }
+  .tabList button {
+    padding: 11px 13px;
+  }
+  .tabPanel {
+    padding: 16px;
+  }
+  .tabPanel .photo {
+    min-height: 220px;
+  }
+  .menuRow {
+    gap: 12px;
+  }
+  .menuRow .photo {
+    width: 64px;
+    height: 80px;
+  }
+  .menuTitle {
+    flex-wrap: wrap;
+    gap: 6px 12px;
+  }
+}

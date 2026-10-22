@@ -1,0 +1,166 @@
+/* @polsia:user-owned */
+.profile {
+  max-width: 1120px;
+  margin-inline: auto;
+  padding-block: 32px 48px;
+}
+.withPortrait {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(0, 0.85fr);
+  align-items: center;
+  gap: clamp(32px, 6cqw, 88px);
+}
+.introduction {
+  min-width: 0;
+}
+.profile .role {
+  margin-bottom: 24px;
+  color: var(--land-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.profile .name {
+  max-width: 900px;
+  font-size: clamp(46px, 7.4cqw, 112px);
+  line-height: 1.03;
+  overflow-wrap: anywhere;
+}
+.profile .description {
+  max-width: 580px;
+  margin-top: 30px;
+  font-size: clamp(18px, 1.9cqw, 22px);
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 32px;
+}
+.profile .note {
+  max-width: 520px;
+  margin-top: 20px;
+  color: var(--land-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.portrait {
+  min-width: 0;
+}
+.portraitFrame {
+  position: relative;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border-radius: var(--land-radius);
+}
+.portraitFrame img {
+  object-fit: cover;
+}
+.portrait figcaption {
+  margin-top: 12px;
+  color: var(--land-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.portfolio {
+  max-width: 1120px;
+  margin-inline: auto;
+}
+.heading {
+  max-width: 640px;
+  margin-bottom: 40px;
+}
+.heading h2 {
+  font-size: clamp(30px, 3.3cqw, 46px);
+}
+.heading p {
+  max-width: 560px;
+  margin-top: 18px;
+  font-size: 16px;
+  line-height: 1.8;
+}
+.projects {
+  border-top: 1px solid var(--land-line);
+}
+.project {
+  min-width: 0;
+  padding-block: 36px;
+  border-bottom: 1px solid var(--land-line);
+}
+.withImage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(28px, 5cqw, 72px);
+}
+.projectImage {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 3 / 2;
+  overflow: hidden;
+  border-radius: var(--land-radius);
+}
+.projectImage img {
+  object-fit: cover;
+}
+.projectCopy {
+  min-width: 0;
+  max-width: 680px;
+}
+.projectMeta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 24px;
+  margin-bottom: 16px;
+  color: var(--land-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.project .projectTitle {
+  font-family: var(--land-display);
+  font-size: clamp(24px, 2.6cqw, 36px);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.project .projectDescription {
+  max-width: 560px;
+  margin-top: 14px;
+  font-size: 16px;
+  line-height: 1.8;
+}
+.projectAction {
+  margin-top: 24px;
+}
+@container landing (max-width: 700px) {
+  .profile {
+    padding-block: 8px 16px;
+  }
+  .withPortrait,
+  .withImage {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+  .profile .role {
+    margin-bottom: 18px;
+  }
+  .profile .description {
+    margin-top: 24px;
+  }
+  .portrait {
+    width: min(100%, 320px);
+  }
+  .heading {
+    margin-bottom: 28px;
+  }
+  .project {
+    padding-block: 28px;
+  }
+  .projectMeta {
+    margin-bottom: 12px;
+  }
+}

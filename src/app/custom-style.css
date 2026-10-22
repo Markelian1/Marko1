@@ -1,0 +1,9 @@
+/* @polsia:user-owned — your custom global CSS: keyframes, animation classes, one-off global
+ * styles, self-hosted @font-face rules, and @import your own .css files. Prefer tw-animate-css
+ * for motion (animate-in, fade-in, slide-in-from-bottom-N, duration-*). The app's visual theme
+ * (colors, light/dark, type, radius, spacing) lives in brand-theme.css; globals.css holds the
+ * framework wiring and is not yours to edit. */
+
+/* Optional data-screen building blocks (src/components/custom/app-ui). User-owned like this
+ * file: keep, restyle, or delete the folder and this line together. */
+@import "../components/custom/app-ui/app-ui.css" layer(components);

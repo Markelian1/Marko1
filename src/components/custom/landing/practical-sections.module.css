@@ -1,0 +1,336 @@
+/* @polsia:user-owned */
+.contact,
+.comparison,
+.agenda {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.heading {
+  margin-bottom: 38px;
+}
+.heading h2 {
+  max-width: 620px;
+  font-size: clamp(30px, 3.5cqw, 45px);
+}
+.heading p {
+  max-width: 58ch;
+  margin-top: 18px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.details .contactContent {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12%;
+}
+.contactDetails {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 28px;
+  min-width: 0;
+}
+.address {
+  display: grid;
+  gap: 12px;
+  font-style: normal;
+  font-size: 16px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.address p {
+  color: var(--land-ink);
+  white-space: pre-line;
+  margin-bottom: 5px;
+}
+.address a {
+  color: var(--land-accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.hours {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  font-size: 12px;
+  border-top: 1px solid var(--land-line);
+  padding-top: 22px;
+}
+.hours > div {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+.hours dt {
+  color: var(--land-muted);
+}
+.hours dd {
+  margin: 0;
+  color: var(--land-ink);
+}
+.map {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 8%;
+  align-items: start;
+}
+.mapFigure {
+  min-width: 0;
+}
+.mapLink {
+  display: block;
+  position: relative;
+  width: 100%;
+  min-height: 380px;
+  aspect-ratio: 1.2;
+  border-radius: var(--land-radius);
+  overflow: hidden;
+  background: var(--land-tint);
+}
+.mapLink img {
+  object-fit: cover;
+}
+.directions {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  right: 20px;
+  width: fit-content;
+  padding: 10px 16px;
+  border-radius: calc(var(--land-radius) * 0.7);
+  background: var(--land-bg);
+  color: var(--land-accent-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.mapFigure figcaption {
+  margin-top: 12px;
+  color: var(--land-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.tableScroller {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border: 1px solid var(--land-line);
+  border-radius: var(--land-radius);
+}
+.tableScroller:focus-visible,
+.range:focus-visible {
+  outline: 3px solid var(--land-accent-ink);
+  outline-offset: 5px;
+}
+.comparisonTable {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.comparisonTable th,
+.comparisonTable td {
+  padding: 21px 25px;
+  min-width: 160px;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.comparisonTable thead th {
+  font-size: 15px;
+  font-weight: 600;
+  padding-block: 25px;
+}
+.comparisonTable tbody th {
+  font-weight: 500;
+}
+.comparisonTable tbody tr {
+  border-top: 1px solid var(--land-line);
+}
+.comparisonTable td {
+  color: var(--land-muted);
+}
+.comparisonTable .highlighted {
+  background: var(--land-tint);
+  color: var(--land-ink);
+}
+
+.beforeAfter {
+  max-width: 960px;
+  margin-inline: auto;
+}
+.imageComparison {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: var(--land-radius);
+  background: var(--land-tint);
+}
+.comparisonImage {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+}
+.comparisonImage img {
+  object-fit: cover;
+}
+.comparisonDivider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  transform: translateX(-50%);
+  background: var(--land-bg);
+  box-shadow: 0 0 0 1px var(--land-ink);
+  pointer-events: none;
+}
+.comparisonLabels {
+  display: flex;
+  justify-content: space-between;
+  gap: 25px;
+  margin-top: 18px;
+  font-size: 13px;
+}
+.comparisonLabels > div {
+  max-width: 45%;
+}
+.comparisonLabels > div:last-child {
+  text-align: right;
+}
+.comparisonLabels p {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.rangeHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-top: 26px;
+  font-size: 12px;
+  color: var(--land-muted);
+}
+.rangeHeading output {
+  color: var(--land-ink);
+  font-variant-numeric: tabular-nums;
+}
+.range {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  margin: 4px 0 0;
+  accent-color: var(--land-accent-ink);
+  cursor: ew-resize;
+}
+
+.agendaItems {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.agendaItem {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.24fr) minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 35px;
+  padding: 28px 0;
+  border-top: 1px solid var(--land-line);
+}
+.agendaItem:last-child {
+  border-bottom: 1px solid var(--land-line);
+}
+.agendaMarker {
+  display: grid;
+  gap: 5px;
+  color: var(--land-ink);
+}
+.time {
+  font-size: 19px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.duration {
+  font-size: 11px;
+  color: var(--land-muted);
+}
+.agendaContent h3 {
+  font-size: 21px;
+}
+.agendaContent p {
+  max-width: 65ch;
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.itemLabel {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--land-accent-ink);
+  font-size: 11px;
+  font-weight: 500;
+}
+.itemAction {
+  padding-top: 3px;
+  max-width: 200px;
+}
+.curriculum .agendaItems {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 34px 50px;
+}
+.curriculum .agendaItem {
+  grid-template-columns: 65px minmax(0, 1fr);
+  gap: 15px 24px;
+  padding: 25px 0 0;
+  border-bottom: 0;
+}
+.moduleNumber {
+  font-family: var(--land-display);
+  font-size: 36px;
+  line-height: 1;
+  font-weight: 400;
+  color: var(--land-accent-ink);
+  margin-bottom: 8px;
+}
+.curriculum .time {
+  font-size: 12px;
+}
+.curriculum .itemAction {
+  grid-column: 2;
+}
+
+@container landing (max-width: 700px) {
+  .details .contactContent,
+  .map {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 34px;
+  }
+  .details .heading {
+    margin-bottom: 0;
+  }
+  .mapLink {
+    min-height: 280px;
+    aspect-ratio: 1.3;
+  }
+  .comparisonTable th,
+  .comparisonTable td {
+    padding: 18px;
+  }
+  .agendaItem {
+    grid-template-columns: 80px minmax(0, 1fr);
+    gap: 14px 20px;
+  }
+  .itemAction {
+    grid-column: 2;
+  }
+  .curriculum .agendaItems {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 26px;
+  }
+}
